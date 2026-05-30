@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>粒子之恋 - 3D Particle Love</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050510; overflow: hidden;
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    user-select: none; -webkit-user-select: none;
+    height: 100dvh; width: 100dvw;
+  }
+  canvas { display: block; }
+
+  #loading {
+    position: fixed; inset: 0; z-index: 100; background: #050510;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    transition: opacity 0.6s;
+  }
+  #loading.hidden { opacity: 0; pointer-events: none; }
+  #loading-text {
+    color: #ff6b9d; font-size: 1.3rem; letter-spacing: 0.15em;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  #loading-sub { color: #ff8fab80; font-size: 0.85rem; margin-top: 10px; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+  #ui {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
+    padding: 16px 20px 24px;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    pointer-events: none;
+    background: linear-gradient(transparent, rgba(5,5,16,0.85) 40%);
+  }
+  #gesture-label {
+    color: #fff; font-size: 1.1rem; letter-spacing: 0.08em;
+    text-shadow: 0 0 20px rgba(255,107,157,0.6); transition: all 0.3s;
+  }
+  #gesture-label.active { color: #ff6b9d; font-size: 1.4rem; }
+  #openness-bar-wrap {
+    width: 200px; height: 4px; background: rgba(255,255,255,0.15);
+    border-radius: 2px; overflow: hidden;
+  }
+  #openness-bar {
+    height: 100%; background: linear-gradient(90deg, #ff6b9d, #ffd166);
+    border-radius: 2px; transition: width 0.15s;
+  }
+
+  #video-preview {
+    position: fixed; bottom: 20px; right: 20px; z-index: 10;
+    width: 140px; height: 105px; border-radius: 12px;
+    border: 2px solid rgba(255,107,157,0.4);
+    object-fit: cover; transform: scaleX(-1);
+    opacity: 0.6; transition: opacity 0.4s;
+  }
+  #video-preview:hover { opacity: 1; }
+
+  #hint {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 10;
+    color: rgba(255,255,255,0.5); font-size: 0.78rem;
+    pointer-events: none; transition: opacity 0.5s;
+  }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div id="loading-text">正在加载手势识别模型…</div>
+  <div id="loading-sub">首次加载可能需要几秒钟</div>
+</div>
+
+<video id="input-video" autoplay playsinline muted style="display:none"></video>
+
+<div id="ui">
+  <div id="gesture-label">等待手势…</div>
+  <div id="openness-bar-wrap"><div id="openness-bar" style="width:50%"></div></div>
+</div>
+
+<div id="hint">按 0 / 1 / 2 切换手势 &nbsp;|&nbsp; 滑动鼠标控制张合</div>
+
+<script src="js/three.min.js"></script>
+<script src="js/camera_utils.js"></script>
+<script src="js/hands.js"></script>
+
+<script>
+// ================================================================
+// 1. 配置
+// ================================================================
+const CONFIG = {
+  particleCount: 5000,
+  sphereRadius: 3,
+  textWidth: 5.5,
+  textHeight: 2.8,
+  transitionSpeed: 4.5,
+  cameraZ: 9,
+  // 平滑参数
+  opennessSmoothing: 0.45,   // EMA 因子（越大越灵敏）
+  landmarkSmoothing: 0.55,
+  gestureDebounceFrames: 5,  // 手势切换需持续帧数
+  // 灯光参数
+  colorPulseSpeed: 2.5,
+  glowIntensity: 1.4,
+};
+
+// ================================================================
+// 2. Three.js 初始化
+// ================================================================
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.5, 50);
+camera.position.set(0, 0, CONFIG.cameraZ);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearColor(0x050510);
+document.body.appendChild(renderer.domElement);
+
+// 发光粒子贴图
+function createGlowTexture() {
+  const size = 64;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.06, 'rgba(255,240,245,0.95)');
+  g.addColorStop(0.2, 'rgba(255,150,180,0.7)');
+  g.addColorStop(0.5, 'rgba(255,80,120,0.15)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(c);
+}
+
+const warmPalette = [
+  '#ff6b9d', '#ff8fab', '#ffb3c6', '#ff477e',
+  '#ffd166', '#ffe66d', '#f78c6b', '#ef476f',
+  '#ff9f9f', '#ffc2d1', '#ff7096', '#ff3366',
+  '#ff5e8a', '#ffb8c6', '#ffccd5', '#ff4081',
+];
+
+// 粒子几何体
+const geometry = new THREE.BufferGeometry();
+const positions = new Float32Array(CONFIG.particleCount * 3);
+const baseColors = new Float32Array(CONFIG.particleCount * 3);
+const colors = new Float32Array(CONFIG.particleCount * 3);
+const sizes = new Float32Array(CONFIG.particleCount);
+
+for (let i = 0; i < CONFIG.particleCount; i++) {
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(2 * Math.random() - 1);
+  const r = CONFIG.sphereRadius * (0.6 + Math.random() * 0.4);
+  positions[i * 3] = Math.sin(phi) * Math.cos(theta) * r;
+  positions[i * 3 + 1] = Math.sin(phi) * Math.sin(theta) * r;
+  positions[i * 3 + 2] = Math.cos(phi) * r;
+
+  const col = new THREE.Color(warmPalette[Math.floor(Math.random() * warmPalette.length)]);
+  baseColors[i * 3] = col.r;
+  baseColors[i * 3 + 1] = col.g;
+  baseColors[i * 3 + 2] = col.b;
+  colors[i * 3] = col.r;
+  colors[i * 3 + 1] = col.g;
+  colors[i * 3 + 2] = col.b;
+
+  sizes[i] = 0.03 + Math.random() * 0.09;
+}
+
+geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+const material = new THREE.PointsMaterial({
+  size: 0.12,
+  map: createGlowTexture(),
+  vertexColors: true,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  transparent: true,
+  opacity: 0.85,
+});
+
+const particles = new THREE.Points(geometry, material);
+scene.add(particles);
+
+// 背景星场
+const starsGeo = new THREE.BufferGeometry();
+const starsCount = 800;
+const starsPos = new Float32Array(starsCount * 3);
+const starsBaseCol = new Float32Array(starsCount * 3);
+const starsCol = new Float32Array(starsCount * 3);
+for (let i = 0; i < starsCount; i++) {
+  starsPos[i * 3] = (Math.random() - 0.5) * 30;
+  starsPos[i * 3 + 1] = (Math.random() - 0.5) * 20;
+  starsPos[i * 3 + 2] = -5 - Math.random() * 15;
+  const brightness = 0.3 + Math.random() * 0.7;
+  starsBaseCol[i * 3] = 0.5 * brightness;
+  starsBaseCol[i * 3 + 1] = 0.5 * brightness;
+  starsBaseCol[i * 3 + 2] = 0.7 * brightness;
+  starsCol[i * 3] = starsBaseCol[i * 3];
+  starsCol[i * 3 + 1] = starsBaseCol[i * 3 + 1];
+  starsCol[i * 3 + 2] = starsBaseCol[i * 3 + 2];
+}
+starsGeo.setAttribute('position', new THREE.BufferAttribute(starsPos, 3));
+starsGeo.setAttribute('color', new THREE.BufferAttribute(starsCol, 3));
+const starsMat = new THREE.PointsMaterial({
+  size: 0.03, vertexColors: true,
+  blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.5,
+});
+const stars = new THREE.Points(starsGeo, starsMat);
+scene.add(stars);
+
+// 环境光点（粒子群周围漂浮的微光）
+const auraGeo = new THREE.BufferGeometry();
+const auraCount = 200;
+const auraPos = new Float32Array(auraCount * 3);
+for (let i = 0; i < auraCount; i++) {
+  auraPos[i * 3] = (Math.random() - 0.5) * 12;
+  auraPos[i * 3 + 1] = (Math.random() - 0.5) * 8;
+  auraPos[i * 3 + 2] = (Math.random() - 0.5) * 4;
+}
+auraGeo.setAttribute('position', new THREE.BufferAttribute(auraPos, 3));
+const auraMat = new THREE.PointsMaterial({
+  size: 0.06, color: 0xff6b9d,
+  blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.25,
+});
+const aura = new THREE.Points(auraGeo, auraMat);
+scene.add(aura);
+
+// ================================================================
+// 3. 文字采样
+// ================================================================
+function sampleTextPositions(text, fontSize, canvasW, canvasH, count) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvasW;
+  canvas.height = canvasH;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `bold ${fontSize}px "Microsoft YaHei", "PingFang SC", "SimHei", "Noto Sans SC", sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, canvasW / 2, canvasH / 2);
+
+  const imageData = ctx.getImageData(0, 0, canvasW, canvasH);
+  const data = imageData.data;
+  const litPixels = [];
+
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] > 100) {
+      litPixels.push({ x: (i / 4) % canvasW, y: Math.floor((i / 4) / canvasW) });
+    }
+  }
+
+  if (litPixels.length < 10) {
+    console.warn('文字采样像素不足:', text);
+    return Array.from({ length: count }, () => ({
+      x: (Math.random() - 0.5) * 2,
+      y: (Math.random() - 0.5) * 2,
+      z: (Math.random() - 0.5) * 0.3,
+    }));
+  }
+
+  const samples = [];
+  for (let i = 0; i < count; i++) {
+    const p = litPixels[Math.floor(Math.random() * litPixels.length)];
+    samples.push({
+      x: (p.x / canvasW - 0.5) * 2,
+      y: -(p.y / canvasH - 0.5) * 2,
+      z: (Math.random() - 0.5) * 0.3,
+    });
+  }
+  return samples;
+}
+
+const loveTargets = sampleTextPositions('爱你', 150, 800, 200, CONFIG.particleCount);
+const foreverTargets = sampleTextPositions('永远爱你', 100, 900, 200, CONFIG.particleCount);
+
+// Fibonacci 球面
+function fibonacciSphere(count) {
+  const points = [];
+  const phi = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < count; i++) {
+    const y = 1 - (i / (count - 1)) * 2;
+    const r = Math.sqrt(1 - y * y);
+    const theta = phi * i;
+    points.push({ x: Math.cos(theta) * r, y, z: Math.sin(theta) * r });
+  }
+  return points;
+}
+const sphereBase = fibonacciSphere(CONFIG.particleCount);
+
+// 每颗粒子独立的过渡速度 + 个性参数
+const particleSpeeds = new Float32Array(CONFIG.particleCount);
+const particlePhases = new Float32Array(CONFIG.particleCount); // 用于颜色/尺寸相位偏移
+for (let i = 0; i < CONFIG.particleCount; i++) {
+  particleSpeeds[i] = CONFIG.transitionSpeed * (0.4 + Math.random() * 1.2);
+  particlePhases[i] = Math.random() * Math.PI * 2;
+}
+
+// ================================================================
+// 4. 手势平滑系统
+// ================================================================
+let rawGesture = 0;
+let rawOpenness = 0.5;
+let handDetected = false;
+let useCamera = false;
+
+// 平滑后的输出值（实际用于粒子系统）
+let smoothGesture = 0;
+let smoothOpenness = 0.5;
+let prevTargetGesture = 0;
+
+// 手势投票防抖
+const gestureVotes = [0, 0, 0];
+const GESTURE_VOTE_DECAY = 0.75;
+const GESTURE_SWITCH_THRESHOLD = 2.5;
+
+// 地标平滑（存储上一帧的平滑地标）
+let smoothedLandmarks = null;
+
+function smoothLandmarks(rawLandmarks) {
+  if (!smoothedLandmarks || smoothedLandmarks.length !== rawLandmarks.length) {
+    smoothedLandmarks = rawLandmarks.map(l => ({ ...l }));
+    return smoothedLandmarks;
+  }
+  const a = CONFIG.landmarkSmoothing;
+  for (let i = 0; i < rawLandmarks.length; i++) {
+    smoothedLandmarks[i].x += (rawLandmarks[i].x - smoothedLandmarks[i].x) * a;
+    smoothedLandmarks[i].y += (rawLandmarks[i].y - smoothedLandmarks[i].y) * a;
+    smoothedLandmarks[i].z += (rawLandmarks[i].z - smoothedLandmarks[i].z) * a;
+  }
+  return smoothedLandmarks;
+}
+
+function detectGesture(landmarks) {
+  const fingers = [
+    { tip: 8, pip: 6 },    // 食指
+    { tip: 12, pip: 10 },  // 中指
+    { tip: 16, pip: 14 },  // 无名指
+    { tip: 20, pip: 18 },  // 小指
+  ];
+  // 使用更宽松的阈值，减少抖动
+  const extended = fingers.map(f => landmarks[f.tip].y < landmarks[f.pip].y - 0.015);
+
+  if (extended[0] && !extended[1] && !extended[2] && !extended[3]) return 1;
+  if (extended[0] && extended[1] && !extended[2] && !extended[3]) return 2;
+  return 0;
+}
+
+function calcOpenness(landmarks) {
+  const thumb = landmarks[4];
+  const pinky = landmarks[20];
+  const dist = Math.hypot(thumb.x - pinky.x, thumb.y - pinky.y, thumb.z - pinky.z);
+  return Math.max(0, Math.min(1, (dist - 0.08) / 0.32));
+}
+
+function updateGestureVote(raw) {
+  // 衰减所有投票
+  for (let i = 0; i < 3; i++) gestureVotes[i] *= GESTURE_VOTE_DECAY;
+  // 投票给当前检测到的手势
+  gestureVotes[raw] += 1.2;
+
+  // 找到得票最高的手势
+  const maxVote = Math.max(...gestureVotes);
+  const maxGesture = gestureVotes.indexOf(maxVote);
+
+  // 票数超过阈值则切换
+  if (maxGesture !== smoothGesture && maxVote >= GESTURE_SWITCH_THRESHOLD) {
+    smoothGesture = maxGesture;
+    // 切换时重置投票
+    for (let i = 0; i < 3; i++) gestureVotes[i] = 0;
+    gestureVotes[maxGesture] = GESTURE_SWITCH_THRESHOLD;
+  }
+
+  // 快速归零：如果当前平滑手势持续得低票，迅速回到0
+  if (smoothGesture > 0 && gestureVotes[smoothGesture] < 1.0 && maxVote < 1.5) {
+    smoothGesture = 0;
+    for (let i = 0; i < 3; i++) gestureVotes[i] = 0;
+  }
+}
+
+function onHandResults(results) {
+  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+    handDetected = true;
+    const raw = results.multiHandLandmarks[0];
+    const smoothed = smoothLandmarks(raw);
+
+    rawGesture = detectGesture(smoothed);
+    rawOpenness = calcOpenness(smoothed);
+
+    // 手势投票防抖
+    updateGestureVote(rawGesture);
+
+    // 张合度 EMA 平滑
+    smoothOpenness += (rawOpenness - smoothOpenness) * CONFIG.opennessSmoothing;
+  } else {
+    handDetected = false;
+    if (!useCamera) return;
+    // 手离开画面时，缓慢回到默认值
+    smoothOpenness += (0.5 - smoothOpenness) * 0.05;
+    // 手势也缓慢归零
+    for (let i = 0; i < 3; i++) gestureVotes[i] *= 0.8;
+    if (Math.max(...gestureVotes) < 1.5) smoothGesture = 0;
+  }
+}
+
+// ================================================================
+// 5. MediaPipe 初始化（优先使用本地模型）
+// ================================================================
+async function initMediaPipe() {
+  if (typeof Hands === 'undefined') {
+    console.warn('MediaPipe Hands 未加载，使用键盘/鼠标后备模式');
+    return false;
+  }
+
+  const hands = new Hands({
+    locateFile: (file) => {
+      // 优先 CDN（确保 WASM 正确加载），本地文件已下载备用
+      return `models/${file}`;
+    },
+  });
+
+  hands.setOptions({
+    maxNumHands: 1,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.65,
+    minTrackingConfidence: 0.4,
+    selfieMode: true,
+  });
+
+  hands.onResults(onHandResults);
+
+  const video = document.getElementById('input-video');
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480, facingMode: 'user' },
+    });
+    video.srcObject = stream;
+    await video.play();
+
+    const preview = document.createElement('video');
+    preview.id = 'video-preview';
+    preview.srcObject = stream;
+    preview.autoplay = true;
+    preview.playsInline = true;
+    preview.muted = true;
+    document.body.appendChild(preview);
+
+    const cameraUtil = new Camera(video, {
+      onFrame: async () => { await hands.send({ image: video }); },
+      width: 640, height: 480,
+    });
+    await cameraUtil.start();
+    return true;
+  } catch (e) {
+    console.warn('摄像头不可用:', e.message);
+    return false;
+  }
+}
+
+// ================================================================
+// 6. 后备控制
+// ================================================================
+function setupFallback() {
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '0') { smoothGesture = 0; for (let i = 0; i < 3; i++) gestureVotes[i] = 0; }
+    if (e.key === '1') { smoothGesture = 1; for (let i = 0; i < 3; i++) gestureVotes[i] = 0; gestureVotes[1] = 10; }
+    if (e.key === '2') { smoothGesture = 2; for (let i = 0; i < 3; i++) gestureVotes[i] = 0; gestureVotes[2] = 10; }
+  });
+
+  let mouseActive = false;
+  document.addEventListener('mousemove', (e) => {
+    mouseActive = true;
+    const target = 1 - e.clientY / window.innerHeight;
+    smoothOpenness += (Math.max(0, Math.min(1, target)) - smoothOpenness) * 0.3;
+  });
+  document.addEventListener('mouseleave', () => { mouseActive = false; });
+
+  document.addEventListener('touchmove', (e) => {
+    const target = 1 - e.touches[0].clientY / window.innerHeight;
+    smoothOpenness += (Math.max(0, Math.min(1, target)) - smoothOpenness) * 0.3;
+  }, { passive: true });
+
+  document.getElementById('hint').style.opacity = '1';
+}
+
+// ================================================================
+// 7. 动态颜色 & 灯光计算
+// ================================================================
+function updateParticleColors(gesture, openness, time) {
+  const col = geometry.attributes.color.array;
+  const G = gesture;
+
+  for (let i = 0; i < CONFIG.particleCount; i++) {
+    const i3 = i * 3;
+    const phase = particlePhases[i];
+
+    if (G > 0) {
+      // 文字形态：暖色增强 + 呼吸脉冲
+      const pulse = 0.75 + 0.25 * Math.sin(time * CONFIG.colorPulseSpeed + phase);
+      const intensity = pulse * (0.8 + openness * 0.4);
+      // 偏粉偏金
+      col[i3]     = Math.min(1, baseColors[i3] * intensity * 1.25);
+      col[i3 + 1] = Math.min(1, baseColors[i3 + 1] * intensity * 0.85);
+      col[i3 + 2] = Math.min(1, baseColors[i3 + 2] * intensity * 0.6);
+    } else {
+      // 散布形态：随张合度变亮 + 微呼吸
+      const pulse = 0.9 + 0.1 * Math.sin(time * 1.5 + phase);
+      const intensity = (0.4 + openness * 0.7) * pulse;
+      col[i3]     = baseColors[i3] * intensity;
+      col[i3 + 1] = baseColors[i3 + 1] * intensity;
+      col[i3 + 2] = baseColors[i3 + 2] * intensity;
+    }
+  }
+  geometry.attributes.color.needsUpdate = true;
+
+  // 整体透明度随手势变化
+  const targetOpacity = G > 0 ? 0.95 : 0.6 + openness * 0.3;
+  material.opacity += (targetOpacity - material.opacity) * 3 * 0.016;
+}
+
+function updateStarColors(gesture, openness, time) {
+  const col = starsGeo.attributes.color.array;
+  for (let i = 0; i < starsCount; i++) {
+    const i3 = i * 3;
+    const flicker = 0.7 + 0.3 * Math.sin(time * 3 + i * 1.7);
+    let intensity;
+    if (gesture > 0) {
+      intensity = (0.6 + openness * 0.5) * flicker;
+      // 文字模式：星星偏暖
+      col[i3]     = starsBaseCol[i3] * intensity * 1.4;
+      col[i3 + 1] = starsBaseCol[i3 + 1] * intensity * 1.0;
+      col[i3 + 2] = starsBaseCol[i3 + 2] * intensity * 0.7;
+    } else {
+      intensity = (0.4 + openness * 0.6) * flicker;
+      col[i3]     = starsBaseCol[i3] * intensity;
+      col[i3 + 1] = starsBaseCol[i3 + 1] * intensity;
+      col[i3 + 2] = starsBaseCol[i3 + 2] * intensity;
+    }
+  }
+  starsGeo.attributes.color.needsUpdate = true;
+}
+
+function updateAura(gesture, openness, time) {
+  if (gesture > 0) {
+    auraMat.opacity += (0.45 - auraMat.opacity) * 2 * 0.016;
+    auraMat.color.setHSL(0.94, 0.9, 0.5 + openness * 0.3);
+  } else {
+    auraMat.opacity += (0.15 + openness * 0.15 - auraMat.opacity) * 2 * 0.016;
+    auraMat.color.setHSL(0.94, 0.7, 0.35 + openness * 0.25);
+  }
+  aura.rotation.y += 0.003;
+  aura.rotation.x += 0.002;
+}
+
+// ================================================================
+// 8. 计算目标位置（含微动噪声）
+// ================================================================
+function computeTargets(gesture, openness, time) {
+  const targets = new Float32Array(CONFIG.particleCount * 3);
+
+  if (gesture === 1) {
+    const spread = 0.65 + openness * 1.4;
+    for (let i = 0; i < CONFIG.particleCount; i++) {
+      const t = loveTargets[i];
+      // 文字形态下微小波动
+      const wave = Math.sin(time * 1.8 + particlePhases[i]) * 0.03 * openness;
+      targets[i * 3]     = t.x * CONFIG.textWidth * spread + wave;
+      targets[i * 3 + 1] = t.y * CONFIG.textHeight * spread + wave * 0.7;
+      targets[i * 3 + 2] = t.z * spread * 2;
+    }
+  } else if (gesture === 2) {
+    const spread = 0.65 + openness * 1.4;
+    for (let i = 0; i < CONFIG.particleCount; i++) {
+      const t = foreverTargets[i];
+      const wave = Math.sin(time * 1.8 + particlePhases[i]) * 0.03 * openness;
+      targets[i * 3]     = t.x * CONFIG.textWidth * spread + wave;
+      targets[i * 3 + 1] = t.y * CONFIG.textHeight * spread + wave * 0.7;
+      targets[i * 3 + 2] = t.z * spread * 2;
+    }
+  } else {
+    const radius = 1.2 + openness * 4.0;
+    for (let i = 0; i < CONFIG.particleCount; i++) {
+      const s = sphereBase[i];
+      // 散布状态下的有机漂浮感
+      const drift = Math.sin(time * 1.3 + i * 0.03) * 0.15 * openness;
+      const drift2 = Math.cos(time * 1.7 + i * 0.05) * 0.12 * openness;
+      targets[i * 3]     = s.x * radius + drift;
+      targets[i * 3 + 1] = s.y * radius + drift2;
+      targets[i * 3 + 2] = s.z * radius + drift * 0.6;
+    }
+  }
+
+  return targets;
+}
+
+// ================================================================
+// 9. 动画循环
+// ================================================================
+const gestureLabel = document.getElementById('gesture-label');
+const opennessBar = document.getElementById('openness-bar');
+const hintEl = document.getElementById('hint');
+
+function updateUI(gesture, openness) {
+  const names = { 0: '散布形态', 1: '爱 你', 2: '永 远 爱 你' };
+  gestureLabel.textContent = names[gesture] || '散布形态';
+  gestureLabel.className = gesture > 0 ? 'active' : '';
+  opennessBar.style.width = (openness * 100) + '%';
+}
+
+let lastTime = performance.now();
+let timeAccum = 0;
+let colorUpdateCounter = 0;
+
+function animate(timestamp) {
+  requestAnimationFrame(animate);
+
+  let dt = (timestamp - lastTime) / 1000;
+  if (dt <= 0 || dt > 0.2) dt = 0.016;
+  lastTime = timestamp;
+  timeAccum += dt;
+
+  // ---- 计算目标位置 ----
+  const targets = computeTargets(smoothGesture, smoothOpenness, timeAccum);
+
+  // ---- 非线性弹簧物理：远快近慢 ----
+  const pos = geometry.attributes.position.array;
+  for (let i = 0; i < pos.length; i++) {
+    const pIdx = Math.floor(i / 3);
+    const diff = targets[i] - pos[i];
+    const dist = Math.abs(diff);
+    // 弹簧因子：基础速度 + 距离加成（越远越快）
+    const springFactor = (particleSpeeds[pIdx] + dist * 6.0) * dt;
+    // 钳制防止过冲振荡
+    pos[i] += diff * Math.min(springFactor, 0.7);
+  }
+  geometry.attributes.position.needsUpdate = true;
+
+  // ---- 整体旋转 ----
+  particles.rotation.y += 0.0012;
+  particles.rotation.x += Math.sin(timeAccum * 0.4) * 0.008;
+  particles.rotation.z += Math.cos(timeAccum * 0.35) * 0.006;
+
+  // ---- 颜色更新（每 2 帧更新一次以节省性能）----
+  colorUpdateCounter++;
+  if (colorUpdateCounter >= 2) {
+    colorUpdateCounter = 0;
+    updateParticleColors(smoothGesture, smoothOpenness, timeAccum);
+    updateStarColors(smoothGesture, smoothOpenness, timeAccum);
+  }
+  updateAura(smoothGesture, smoothOpenness, timeAccum);
+
+  // ---- 粒子大小随张合微调 ----
+  const targetSize = 0.1 + smoothOpenness * 0.04 + (smoothGesture > 0 ? 0.03 : 0);
+  material.size += (targetSize - material.size) * 3 * dt;
+
+  updateUI(smoothGesture, smoothOpenness);
+  renderer.render(scene, camera);
+}
+
+// ================================================================
+// 10. 启动
+// ================================================================
+async function main() {
+  setupFallback();
+
+  const cameraReady = await initMediaPipe();
+  useCamera = cameraReady;
+
+  if (!cameraReady) {
+    hintEl.style.opacity = '1';
+  } else {
+    hintEl.style.opacity = '0';
+  }
+
+  const loading = document.getElementById('loading');
+  loading.classList.add('hidden');
+  setTimeout(() => loading.remove(), 700);
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  requestAnimationFrame(animate);
+}
+
+main().catch((e) => {
+  console.error('启动失败:', e);
+  document.getElementById('loading-text').textContent = '加载失败，请刷新页面';
+});
+</script>
+
+</body>
+</html>
