@@ -85,14 +85,11 @@
   #music-btn:hover { border-color: #ff6b9d; box-shadow: 0 0 16px rgba(255,107,157,0.4); }
   #music-btn.off { color: rgba(255,255,255,0.4); border-color: rgba(255,255,255,0.2); }
 
-  #music-player {
-    position: fixed; bottom: 80px; right: 8px; z-index: 20;
-    width: 280px; height: 90px; opacity: 0.85;
-    border-radius: 12px; overflow: hidden;
-    transition: all 0.4s; pointer-events: auto;
-    border: 1px solid rgba(255,107,157,0.25);
+  #local-music-hint {
+    position: fixed; top: 60px; right: 10px; z-index: 20;
+    color: rgba(255,255,255,0.35); font-size: 0.7rem;
+    pointer-events: none; text-align: right; line-height: 1.4;
   }
-  #music-player.hidden { opacity: 0; pointer-events: none; transform: translateY(10px); }
 </style>
 </head>
 <body>
@@ -104,10 +101,7 @@
 </div>
 
 <button id="music-btn" title="音乐">♪</button>
-<div id="music-player" class="hidden">
-  <iframe id="music-iframe" frameborder="no" border="0" marginwidth="0" marginheight="0" width="100%" height="86"
-   allow="autoplay" style="border-radius:12px"></iframe>
-</div>
+<div id="local-music-hint"></div>
 
 <video id="input-video" autoplay playsinline muted style="display:none"></video>
 
@@ -127,23 +121,22 @@
 // 1. 配置
 // ================================================================
 const CONFIG = {
-  particleCount: 5000,
+  particleCount: 10000,
   sphereRadius: 3,
   textWidth: 5.5,
   textHeight: 2.8,
   transitionSpeed: 4.5,
   cameraZ: 9,
-  // 平滑参数
   opennessSmoothing: 0.45,
   landmarkSmoothing: 0.55,
   gestureDebounceFrames: 5,
-  // 灯光参数
   colorPulseSpeed: 2.5,
   glowIntensity: 1.4,
-  // 音乐：网易云歌单 ID（在 music.163.com 打开歌单，URL 中 id= 后面的数字）
-  musicPlaylistId: '751524280',
-  // 模型加载超时（秒），超时自动使用键盘模式
   modelLoadTimeout: 30,
+  // 手部跟随灵敏度
+  handFollowSpeed: 0.08,
+  // 颜色变化速度
+  hueShiftSpeed: 0.15,
 };
 
 // ================================================================
@@ -177,12 +170,12 @@ function createGlowTexture() {
   return new THREE.CanvasTexture(c);
 }
 
-const warmPalette = [
-  '#ff6b9d', '#ff8fab', '#ffb3c6', '#ff477e',
-  '#ffd166', '#ffe66d', '#f78c6b', '#ef476f',
-  '#ff9f9f', '#ffc2d1', '#ff7096', '#ff3366',
-  '#ff5e8a', '#ffb8c6', '#ffccd5', '#ff4081',
-];
+// 炫彩 HSL 调色板 — 每颗粒子有独立色相
+function hslToColor(h, s, l) {
+  const col = new THREE.Color();
+  col.setHSL(h, s, l);
+  return col;
+}
 
 // 粒子几何体
 const geometry = new THREE.BufferGeometry();
@@ -190,6 +183,11 @@ const positions = new Float32Array(CONFIG.particleCount * 3);
 const baseColors = new Float32Array(CONFIG.particleCount * 3);
 const colors = new Float32Array(CONFIG.particleCount * 3);
 const sizes = new Float32Array(CONFIG.particleCount);
+
+// 每颗粒子的基础色相（暖色系 + 彩虹扩展）
+const baseHues = new Float32Array(CONFIG.particleCount);
+const baseSats = new Float32Array(CONFIG.particleCount);
+const baseLights = new Float32Array(CONFIG.particleCount);
 
 for (let i = 0; i < CONFIG.particleCount; i++) {
   const theta = Math.random() * Math.PI * 2;
@@ -199,7 +197,15 @@ for (let i = 0; i < CONFIG.particleCount; i++) {
   positions[i * 3 + 1] = Math.sin(phi) * Math.sin(theta) * r;
   positions[i * 3 + 2] = Math.cos(phi) * r;
 
-  const col = new THREE.Color(warmPalette[Math.floor(Math.random() * warmPalette.length)]);
+  // 暖色系色相：粉红(0.93) 到 金色(0.13)，覆盖红-橙-黄-粉
+  const hue = 0.88 + Math.random() * 0.25; // 0.88~1.13 环绕
+  const sat = 0.6 + Math.random() * 0.4;
+  const light = 0.4 + Math.random() * 0.3;
+  baseHues[i] = hue % 1;
+  baseSats[i] = sat;
+  baseLights[i] = light;
+
+  const col = hslToColor(baseHues[i], sat, light);
   baseColors[i * 3] = col.r;
   baseColors[i * 3 + 1] = col.g;
   baseColors[i * 3 + 2] = col.b;
@@ -207,14 +213,14 @@ for (let i = 0; i < CONFIG.particleCount; i++) {
   colors[i * 3 + 1] = col.g;
   colors[i * 3 + 2] = col.b;
 
-  sizes[i] = 0.03 + Math.random() * 0.09;
+  sizes[i] = 0.02 + Math.random() * 0.08;
 }
 
 geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
 const material = new THREE.PointsMaterial({
-  size: 0.12,
+  size: 0.10,
   map: createGlowTexture(),
   vertexColors: true,
   blending: THREE.AdditiveBlending,
@@ -228,7 +234,7 @@ scene.add(particles);
 
 // 背景星场
 const starsGeo = new THREE.BufferGeometry();
-const starsCount = 800;
+const starsCount = 1200;
 const starsPos = new Float32Array(starsCount * 3);
 const starsBaseCol = new Float32Array(starsCount * 3);
 const starsCol = new Float32Array(starsCount * 3);
@@ -237,41 +243,49 @@ for (let i = 0; i < starsCount; i++) {
   starsPos[i * 3 + 1] = (Math.random() - 0.5) * 20;
   starsPos[i * 3 + 2] = -5 - Math.random() * 15;
   const brightness = 0.3 + Math.random() * 0.7;
-  starsBaseCol[i * 3] = 0.5 * brightness;
-  starsBaseCol[i * 3 + 1] = 0.5 * brightness;
-  starsBaseCol[i * 3 + 2] = 0.7 * brightness;
-  starsCol[i * 3] = starsBaseCol[i * 3];
-  starsCol[i * 3 + 1] = starsBaseCol[i * 3 + 1];
-  starsCol[i * 3 + 2] = starsBaseCol[i * 3 + 2];
+  const hue = 0.55 + Math.random() * 0.15;
+  const col = hslToColor(hue, 0.3, brightness * 0.6);
+  starsBaseCol[i * 3] = col.r;
+  starsBaseCol[i * 3 + 1] = col.g;
+  starsBaseCol[i * 3 + 2] = col.b;
+  starsCol[i * 3] = col.r;
+  starsCol[i * 3 + 1] = col.g;
+  starsCol[i * 3 + 2] = col.b;
 }
 starsGeo.setAttribute('position', new THREE.BufferAttribute(starsPos, 3));
 starsGeo.setAttribute('color', new THREE.BufferAttribute(starsCol, 3));
 const starsMat = new THREE.PointsMaterial({
-  size: 0.03, vertexColors: true,
-  blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.5,
+  size: 0.025, vertexColors: true,
+  blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55,
 });
 const stars = new THREE.Points(starsGeo, starsMat);
 scene.add(stars);
 
-// 环境光点（粒子群周围漂浮的微光）
+// 环境光点
 const auraGeo = new THREE.BufferGeometry();
-const auraCount = 200;
+const auraCount = 300;
 const auraPos = new Float32Array(auraCount * 3);
+const auraColArr = new Float32Array(auraCount * 3);
 for (let i = 0; i < auraCount; i++) {
   auraPos[i * 3] = (Math.random() - 0.5) * 12;
   auraPos[i * 3 + 1] = (Math.random() - 0.5) * 8;
   auraPos[i * 3 + 2] = (Math.random() - 0.5) * 4;
+  const col = hslToColor(0.9 + Math.random() * 0.1, 0.8, 0.5 + Math.random() * 0.4);
+  auraColArr[i * 3] = col.r;
+  auraColArr[i * 3 + 1] = col.g;
+  auraColArr[i * 3 + 2] = col.b;
 }
 auraGeo.setAttribute('position', new THREE.BufferAttribute(auraPos, 3));
+auraGeo.setAttribute('color', new THREE.BufferAttribute(auraColArr, 3));
 const auraMat = new THREE.PointsMaterial({
-  size: 0.06, color: 0xff6b9d,
+  size: 0.06, vertexColors: true,
   blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.25,
 });
 const aura = new THREE.Points(auraGeo, auraMat);
 scene.add(aura);
 
 // ================================================================
-// 3. 文字采样
+// 3. 文字采样（更高分辨率 + 更多采样点）
 // ================================================================
 function sampleTextPositions(text, fontSize, canvasW, canvasH, count) {
   const canvas = document.createElement('canvas');
@@ -290,7 +304,7 @@ function sampleTextPositions(text, fontSize, canvasW, canvasH, count) {
   const litPixels = [];
 
   for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] > 100) {
+    if (data[i + 3] > 80) {
       litPixels.push({ x: (i / 4) % canvasW, y: Math.floor((i / 4) / canvasW) });
     }
   }
@@ -310,14 +324,14 @@ function sampleTextPositions(text, fontSize, canvasW, canvasH, count) {
     samples.push({
       x: (p.x / canvasW - 0.5) * 2,
       y: -(p.y / canvasH - 0.5) * 2,
-      z: (Math.random() - 0.5) * 0.3,
+      z: (Math.random() - 0.5) * 0.25,
     });
   }
   return samples;
 }
 
-const loveTargets = sampleTextPositions('爱你', 150, 800, 200, CONFIG.particleCount);
-const foreverTargets = sampleTextPositions('永远爱你', 100, 900, 200, CONFIG.particleCount);
+const loveTargets = sampleTextPositions('爱你', 160, 900, 220, CONFIG.particleCount);
+const foreverTargets = sampleTextPositions('永远爱你', 110, 1000, 220, CONFIG.particleCount);
 
 // Fibonacci 球面
 function fibonacciSphere(count) {
@@ -335,31 +349,36 @@ const sphereBase = fibonacciSphere(CONFIG.particleCount);
 
 // 每颗粒子独立的过渡速度 + 个性参数
 const particleSpeeds = new Float32Array(CONFIG.particleCount);
-const particlePhases = new Float32Array(CONFIG.particleCount); // 用于颜色/尺寸相位偏移
+const particlePhases = new Float32Array(CONFIG.particleCount);
+const sparkleTimers = new Float32Array(CONFIG.particleCount);
 for (let i = 0; i < CONFIG.particleCount; i++) {
   particleSpeeds[i] = CONFIG.transitionSpeed * (0.4 + Math.random() * 1.2);
   particlePhases[i] = Math.random() * Math.PI * 2;
+  sparkleTimers[i] = Math.random() * 100;
 }
 
 // ================================================================
-// 4. 手势平滑系统
+// 4. 手势平滑系统 + 手部位置追踪
 // ================================================================
 let rawGesture = 0;
 let rawOpenness = 0.5;
 let handDetected = false;
 let useCamera = false;
 
-// 平滑后的输出值（实际用于粒子系统）
 let smoothGesture = 0;
 let smoothOpenness = 0.5;
-let prevTargetGesture = 0;
 
-// 手势投票防抖
+// 手部中心位置（归一化坐标 0-1，平滑后）
+let handCenterX = 0.5;
+let handCenterY = 0.5;
+let smoothHandX = 0.5;
+let smoothHandY = 0.5;
+let smoothHandZ = 0;
+
 const gestureVotes = [0, 0, 0];
 const GESTURE_VOTE_DECAY = 0.75;
 const GESTURE_SWITCH_THRESHOLD = 2.5;
 
-// 地标平滑（存储上一帧的平滑地标）
 let smoothedLandmarks = null;
 
 function smoothLandmarks(rawLandmarks) {
@@ -378,12 +397,11 @@ function smoothLandmarks(rawLandmarks) {
 
 function detectGesture(landmarks) {
   const fingers = [
-    { tip: 8, pip: 6 },    // 食指
-    { tip: 12, pip: 10 },  // 中指
-    { tip: 16, pip: 14 },  // 无名指
-    { tip: 20, pip: 18 },  // 小指
+    { tip: 8, pip: 6 },
+    { tip: 12, pip: 10 },
+    { tip: 16, pip: 14 },
+    { tip: 20, pip: 18 },
   ];
-  // 使用更宽松的阈值，减少抖动
   const extended = fingers.map(f => landmarks[f.tip].y < landmarks[f.pip].y - 0.015);
 
   if (extended[0] && !extended[1] && !extended[2] && !extended[3]) return 1;
@@ -399,24 +417,18 @@ function calcOpenness(landmarks) {
 }
 
 function updateGestureVote(raw) {
-  // 衰减所有投票
   for (let i = 0; i < 3; i++) gestureVotes[i] *= GESTURE_VOTE_DECAY;
-  // 投票给当前检测到的手势
   gestureVotes[raw] += 1.2;
 
-  // 找到得票最高的手势
   const maxVote = Math.max(...gestureVotes);
   const maxGesture = gestureVotes.indexOf(maxVote);
 
-  // 票数超过阈值则切换
   if (maxGesture !== smoothGesture && maxVote >= GESTURE_SWITCH_THRESHOLD) {
     smoothGesture = maxGesture;
-    // 切换时重置投票
     for (let i = 0; i < 3; i++) gestureVotes[i] = 0;
     gestureVotes[maxGesture] = GESTURE_SWITCH_THRESHOLD;
   }
 
-  // 快速归零：如果当前平滑手势持续得低票，迅速回到0
   if (smoothGesture > 0 && gestureVotes[smoothGesture] < 1.0 && maxVote < 1.5) {
     smoothGesture = 0;
     for (let i = 0; i < 3; i++) gestureVotes[i] = 0;
@@ -432,24 +444,34 @@ function onHandResults(results) {
     rawGesture = detectGesture(smoothed);
     rawOpenness = calcOpenness(smoothed);
 
-    // 手势投票防抖
     updateGestureVote(rawGesture);
-
-    // 张合度 EMA 平滑
     smoothOpenness += (rawOpenness - smoothOpenness) * CONFIG.opennessSmoothing;
+
+    // 手部中心追踪（使用手腕 landmark 0 + 中指根部 landmark 9 的平均）
+    handCenterX = (smoothed[0].x + smoothed[9].x) / 2;
+    handCenterY = (smoothed[0].y + smoothed[9].y) / 2;
+    // Z 深度（拇指与食指指尖中点近似）
+    const handZ = (smoothed[4].z + smoothed[8].z) / 2;
+    smoothHandZ += (handZ - smoothHandZ) * 0.3;
   } else {
     handDetected = false;
     if (!useCamera) return;
-    // 手离开画面时，缓慢回到默认值
     smoothOpenness += (0.5 - smoothOpenness) * 0.05;
-    // 手势也缓慢归零
     for (let i = 0; i < 3; i++) gestureVotes[i] *= 0.8;
     if (Math.max(...gestureVotes) < 1.5) smoothGesture = 0;
+    // 手离开时缓慢回到中心
+    handCenterX = 0.5;
+    handCenterY = 0.5;
   }
+
+  // 平滑手部位置
+  const f = CONFIG.handFollowSpeed;
+  smoothHandX += (handCenterX - smoothHandX) * f;
+  smoothHandY += (handCenterY - smoothHandY) * f;
 }
 
 // ================================================================
-// 5. MediaPipe 初始化（优先使用本地模型）
+// 5. MediaPipe 初始化
 // ================================================================
 async function initMediaPipe() {
   const loadingText = document.getElementById('loading-text');
@@ -463,7 +485,6 @@ async function initMediaPipe() {
     return false;
   }
 
-  // 模拟加载进度（模型文件较大，给用户可见的反馈）
   let progress = 0;
   const progressTimer = setInterval(() => {
     progress += Math.random() * 8;
@@ -492,7 +513,6 @@ async function initMediaPipe() {
 
   const video = document.getElementById('input-video');
 
-  // 超时兜底
   const timeoutPromise = new Promise((resolve) => {
     setTimeout(() => {
       clearInterval(progressTimer);
@@ -552,13 +572,13 @@ function setupFallback() {
     if (e.key === '2') { smoothGesture = 2; for (let i = 0; i < 3; i++) gestureVotes[i] = 0; gestureVotes[2] = 10; }
   });
 
-  let mouseActive = false;
   document.addEventListener('mousemove', (e) => {
-    mouseActive = true;
     const target = 1 - e.clientY / window.innerHeight;
     smoothOpenness += (Math.max(0, Math.min(1, target)) - smoothOpenness) * 0.3;
+    // 键盘模式下鼠标也控制文字偏移
+    smoothHandX += ((e.clientX / window.innerWidth) - smoothHandX) * 0.1;
+    smoothHandY += ((1 - e.clientY / window.innerHeight) - smoothHandY) * 0.1;
   });
-  document.addEventListener('mouseleave', () => { mouseActive = false; });
 
   document.addEventListener('touchmove', (e) => {
     const target = 1 - e.touches[0].clientY / window.innerHeight;
@@ -569,7 +589,7 @@ function setupFallback() {
 }
 
 // ================================================================
-// 7. 动态颜色 & 灯光计算
+// 7. 动态颜色 & 灯光计算（炫彩增强版）
 // ================================================================
 function updateParticleColors(gesture, openness, time) {
   const col = geometry.attributes.color.array;
@@ -579,26 +599,35 @@ function updateParticleColors(gesture, openness, time) {
     const i3 = i * 3;
     const phase = particlePhases[i];
 
+    // 色相随时间/开放度偏移
+    let hueShift = time * CONFIG.hueShiftSpeed * (0.5 + openness * 0.5);
+    if (G > 0) hueShift *= 1.8; // 文字模式色相变化更快
+
+    const hue = (baseHues[i] + hueShift * 0.1 + phase * 0.05) % 1;
+    const sat = baseSats[i] * (0.7 + openness * 0.5);
+    let light = baseLights[i];
+
     if (G > 0) {
-      // 文字形态：暖色增强 + 呼吸脉冲
       const pulse = 0.75 + 0.25 * Math.sin(time * CONFIG.colorPulseSpeed + phase);
-      const intensity = pulse * (0.8 + openness * 0.4);
-      // 偏粉偏金
-      col[i3]     = Math.min(1, baseColors[i3] * intensity * 1.25);
-      col[i3 + 1] = Math.min(1, baseColors[i3 + 1] * intensity * 0.85);
-      col[i3 + 2] = Math.min(1, baseColors[i3 + 2] * intensity * 0.6);
+      light = light * pulse * (0.75 + openness * 0.5);
     } else {
-      // 散布形态：随张合度变亮 + 微呼吸
       const pulse = 0.9 + 0.1 * Math.sin(time * 1.5 + phase);
-      const intensity = (0.4 + openness * 0.7) * pulse;
-      col[i3]     = baseColors[i3] * intensity;
-      col[i3 + 1] = baseColors[i3 + 1] * intensity;
-      col[i3 + 2] = baseColors[i3 + 2] * intensity;
+      light = light * (0.35 + openness * 0.7) * pulse;
     }
+
+    // 闪烁粒子：部分粒子随机变亮
+    sparkleTimers[i] += 0.05;
+    if (Math.sin(sparkleTimers[i] * 3 + phase) > 0.92 && Math.random() > 0.7) {
+      light = Math.min(1, light * 2.5);
+    }
+
+    const tempCol = hslToColor(hue, Math.min(1, sat), Math.min(1, Math.max(0.05, light)));
+    col[i3] = tempCol.r;
+    col[i3 + 1] = tempCol.g;
+    col[i3 + 2] = tempCol.b;
   }
   geometry.attributes.color.needsUpdate = true;
 
-  // 整体透明度随手势变化
   const targetOpacity = G > 0 ? 0.95 : 0.6 + openness * 0.3;
   material.opacity += (targetOpacity - material.opacity) * 3 * 0.016;
 }
@@ -611,13 +640,12 @@ function updateStarColors(gesture, openness, time) {
     let intensity;
     if (gesture > 0) {
       intensity = (0.6 + openness * 0.5) * flicker;
-      // 文字模式：星星偏暖
-      col[i3]     = starsBaseCol[i3] * intensity * 1.4;
+      col[i3] = starsBaseCol[i3] * intensity * 1.4;
       col[i3 + 1] = starsBaseCol[i3 + 1] * intensity * 1.0;
       col[i3 + 2] = starsBaseCol[i3 + 2] * intensity * 0.7;
     } else {
       intensity = (0.4 + openness * 0.6) * flicker;
-      col[i3]     = starsBaseCol[i3] * intensity;
+      col[i3] = starsBaseCol[i3] * intensity;
       col[i3 + 1] = starsBaseCol[i3 + 1] * intensity;
       col[i3 + 2] = starsBaseCol[i3 + 2] * intensity;
     }
@@ -635,38 +663,59 @@ function updateAura(gesture, openness, time) {
   }
   aura.rotation.y += 0.003;
   aura.rotation.x += 0.002;
+
+  // 环境光颜色随手势变化
+  const aCol = auraGeo.attributes.color.array;
+  for (let i = 0; i < auraCount; i++) {
+    const i3 = i * 3;
+    const hueShift = time * 0.1;
+    const tempCol = hslToColor(
+      (0.9 + hueShift + i * 0.001) % 1,
+      0.7 + openness * 0.3,
+      0.4 + openness * 0.4 + Math.sin(time * 2 + i) * 0.1
+    );
+    aCol[i3] = tempCol.r;
+    aCol[i3 + 1] = tempCol.g;
+    aCol[i3 + 2] = tempCol.b;
+  }
+  auraGeo.attributes.color.needsUpdate = true;
 }
 
 // ================================================================
-// 8. 计算目标位置（含微动噪声）
+// 8. 计算目标位置（文字面向摄像头 + 跟随手部运动）
 // ================================================================
 function computeTargets(gesture, openness, time) {
   const targets = new Float32Array(CONFIG.particleCount * 3);
 
+  // 手部位置映射到世界空间偏移（X: ±3, Y: ±2）
+  const handOffsetX = (smoothHandX - 0.5) * 6.0;
+  const handOffsetY = (smoothHandY - 0.5) * 4.0;
+  // 深度影响扩散
+  const depthFactor = 1 + smoothHandZ * 0.5;
+
   if (gesture === 1) {
-    const spread = 0.65 + openness * 1.4;
+    const spread = (0.65 + openness * 1.4) * depthFactor;
     for (let i = 0; i < CONFIG.particleCount; i++) {
       const t = loveTargets[i];
-      // 文字形态下微小波动
-      const wave = Math.sin(time * 1.8 + particlePhases[i]) * 0.03 * openness;
-      targets[i * 3]     = t.x * CONFIG.textWidth * spread + wave;
-      targets[i * 3 + 1] = t.y * CONFIG.textHeight * spread + wave * 0.7;
-      targets[i * 3 + 2] = t.z * spread * 2;
+      const wave = Math.sin(time * 1.8 + particlePhases[i]) * 0.025 * openness;
+      // 文字在 XY 平面（面向摄像头），Z 轴做微小厚度
+      targets[i * 3]     = t.x * CONFIG.textWidth * spread + handOffsetX + wave;
+      targets[i * 3 + 1] = t.y * CONFIG.textHeight * spread + handOffsetY + wave * 0.7;
+      targets[i * 3 + 2] = t.z * spread * 2 + smoothHandZ * 1.5;
     }
   } else if (gesture === 2) {
-    const spread = 0.65 + openness * 1.4;
+    const spread = (0.65 + openness * 1.4) * depthFactor;
     for (let i = 0; i < CONFIG.particleCount; i++) {
       const t = foreverTargets[i];
-      const wave = Math.sin(time * 1.8 + particlePhases[i]) * 0.03 * openness;
-      targets[i * 3]     = t.x * CONFIG.textWidth * spread + wave;
-      targets[i * 3 + 1] = t.y * CONFIG.textHeight * spread + wave * 0.7;
-      targets[i * 3 + 2] = t.z * spread * 2;
+      const wave = Math.sin(time * 1.8 + particlePhases[i]) * 0.025 * openness;
+      targets[i * 3]     = t.x * CONFIG.textWidth * spread + handOffsetX + wave;
+      targets[i * 3 + 1] = t.y * CONFIG.textHeight * spread + handOffsetY + wave * 0.7;
+      targets[i * 3 + 2] = t.z * spread * 2 + smoothHandZ * 1.5;
     }
   } else {
     const radius = 1.2 + openness * 4.0;
     for (let i = 0; i < CONFIG.particleCount; i++) {
       const s = sphereBase[i];
-      // 散布状态下的有机漂浮感
       const drift = Math.sin(time * 1.3 + i * 0.03) * 0.15 * openness;
       const drift2 = Math.cos(time * 1.7 + i * 0.05) * 0.12 * openness;
       targets[i * 3]     = s.x * radius + drift;
@@ -704,28 +753,33 @@ function animate(timestamp) {
   lastTime = timestamp;
   timeAccum += dt;
 
-  // ---- 计算目标位置 ----
   const targets = computeTargets(smoothGesture, smoothOpenness, timeAccum);
 
-  // ---- 非线性弹簧物理：远快近慢 ----
   const pos = geometry.attributes.position.array;
   for (let i = 0; i < pos.length; i++) {
     const pIdx = Math.floor(i / 3);
     const diff = targets[i] - pos[i];
     const dist = Math.abs(diff);
-    // 弹簧因子：基础速度 + 距离加成（越远越快）
     const springFactor = (particleSpeeds[pIdx] + dist * 6.0) * dt;
-    // 钳制防止过冲振荡
     pos[i] += diff * Math.min(springFactor, 0.7);
   }
   geometry.attributes.position.needsUpdate = true;
 
-  // ---- 整体旋转 ----
-  particles.rotation.y += 0.0012;
-  particles.rotation.x += Math.sin(timeAccum * 0.4) * 0.008;
-  particles.rotation.z += Math.cos(timeAccum * 0.35) * 0.006;
+  // 文字形态：面向摄像头，只做手部微调旋转
+  if (smoothGesture > 0) {
+    // 平滑回到正向（面向摄像头）
+    const targetRotY = (smoothHandX - 0.5) * 1.0;  // 手左右移动微调 Y 旋转
+    const targetRotX = (smoothHandY - 0.5) * 0.6;  // 手上下移动微调 X 旋转
+    particles.rotation.y += (targetRotY - particles.rotation.y) * 0.08;
+    particles.rotation.x += (targetRotX - particles.rotation.x) * 0.08;
+    particles.rotation.z += (0 - particles.rotation.z) * 0.08;
+  } else {
+    // 散布形态：自由旋转
+    particles.rotation.y += 0.0015;
+    particles.rotation.x += Math.sin(timeAccum * 0.4) * 0.008;
+    particles.rotation.z += Math.cos(timeAccum * 0.35) * 0.006;
+  }
 
-  // ---- 颜色更新（每 2 帧更新一次以节省性能）----
   colorUpdateCounter++;
   if (colorUpdateCounter >= 2) {
     colorUpdateCounter = 0;
@@ -734,8 +788,7 @@ function animate(timestamp) {
   }
   updateAura(smoothGesture, smoothOpenness, timeAccum);
 
-  // ---- 粒子大小随张合微调 ----
-  const targetSize = 0.1 + smoothOpenness * 0.04 + (smoothGesture > 0 ? 0.03 : 0);
+  const targetSize = 0.08 + smoothOpenness * 0.04 + (smoothGesture > 0 ? 0.03 : 0);
   material.size += (targetSize - material.size) * 3 * dt;
 
   updateUI(smoothGesture, smoothOpenness);
@@ -743,38 +796,211 @@ function animate(timestamp) {
 }
 
 // ================================================================
-// 10. 音乐播放器
+// 10. 音乐系统（Web Audio API 环境音乐 + 可选本地 MP3）
 // ================================================================
 let musicOn = false;
-let musicInitialized = false;
+let audioCtx = null;
+let ambientNodes = null;
+let localAudio = null;
+let localPlaylist = [];
+let localTrackIdx = 0;
+
+function createAmbientMusic() {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+  // 主音量
+  const masterGain = ctx.createGain();
+  masterGain.gain.value = 0;
+  masterGain.connect(ctx.destination);
+
+  // 混响（用延迟模拟）
+  const delay = ctx.createDelay(0.4);
+  delay.delayTime.value = 0.35;
+  const feedback = ctx.createGain();
+  feedback.gain.value = 0.3;
+  const delayDry = ctx.createGain();
+  delayDry.gain.value = 0.7;
+  const delayWet = ctx.createGain();
+  delayWet.gain.value = 0.3;
+
+  // 和弦进行（浪漫 C大调）
+  const chords = [
+    [261.63, 329.63, 392.00],  // C major
+    [293.66, 369.99, 440.00],  // D minor
+    [349.23, 440.00, 523.25],  // F major
+    [392.00, 493.88, 587.33],  // G major
+    [329.63, 392.00, 493.88],  // E minor
+    [220.00, 261.63, 329.63],  // A minor
+  ];
+
+  let chordIdx = 0;
+  let chordStartTime = ctx.currentTime;
+  const oscillators = [];
+  const lfos = [];
+
+  function changeChord() {
+    const chord = chords[chordIdx % chords.length];
+    chordIdx++;
+
+    // 渐变到新和弦
+    const now = ctx.currentTime;
+    chord.forEach((freq, idx) => {
+      if (oscillators[idx]) {
+        oscillators[idx].frequency.cancelScheduledValues(now);
+        oscillators[idx].frequency.setTargetAtTime(freq, now, 0.5);
+      }
+    });
+
+    chordStartTime = now;
+  }
+
+  // 创建 3 个振荡器（含泛音）
+  for (let i = 0; i < 3; i++) {
+    const osc = ctx.createOscillator();
+    const oscGain = ctx.createGain();
+    const lfo = ctx.createOscillator();
+    const lfoGain = ctx.createGain();
+
+    osc.type = i === 0 ? 'sine' : i === 1 ? 'triangle' : 'sine';
+    osc.frequency.value = chords[0][i];
+    oscGain.gain.value = 0.06;
+
+    // LFO 调制音量（颤音效果）
+    lfo.type = 'sine';
+    lfo.frequency.value = 0.2 + i * 0.15;
+    lfoGain.gain.value = 0.02;
+
+    lfo.connect(lfoGain);
+    lfoGain.connect(oscGain.gain);
+    osc.connect(oscGain);
+    oscGain.connect(delayDry);
+    oscGain.connect(delayWet);
+
+    osc.start();
+    lfo.start();
+
+    oscillators.push(osc);
+    lfos.push(lfo);
+  }
+
+  delayDry.connect(masterGain);
+  delayWet.connect(delay);
+  delay.connect(feedback);
+  feedback.connect(delay);
+  delay.connect(masterGain);
+
+  // 和弦定时切换
+  const chordInterval = setInterval(() => {
+    if (ctx.state === 'closed') {
+      clearInterval(chordInterval);
+      return;
+    }
+    changeChord();
+  }, 8000);
+
+  return {
+    ctx,
+    masterGain,
+    oscillators,
+    lfos,
+    chordInterval,
+    fadeIn() {
+      if (ctx.state === 'suspended') ctx.resume();
+      const now = ctx.currentTime;
+      masterGain.gain.cancelScheduledValues(now);
+      masterGain.gain.setTargetAtTime(0.12, now, 1.5);
+    },
+    fadeOut() {
+      const now = ctx.currentTime;
+      masterGain.gain.cancelScheduledValues(now);
+      masterGain.gain.setTargetAtTime(0, now, 1.0);
+    },
+    destroy() {
+      clearInterval(chordInterval);
+      oscillators.forEach(o => { try { o.stop(); } catch(e) {} });
+      lfos.forEach(l => { try { l.stop(); } catch(e) {} });
+      ctx.close();
+    }
+  };
+}
+
+// 尝试加载本地 MP3 文件
+async function tryLoadLocalMusic() {
+  const hint = document.getElementById('local-music-hint');
+  // 尝试加载 musics/ 文件夹中的文件
+  const testFiles = ['1.wav', '2.wav', '3.wav'];
+  const found = [];
+
+  for (const f of testFiles) {
+    try {
+      const resp = await fetch('musics/' + f, { method: 'HEAD' });
+      if (resp.ok) found.push('musics/' + f);
+    } catch (e) {
+      // 文件不存在，跳过
+    }
+  }
+
+  if (found.length > 0) {
+    localPlaylist = found;
+    hint.textContent = '本地音乐已就绪 (' + found.length + '首)';
+    return true;
+  } else {
+    hint.textContent = '💡 将 MP3 放入 musics/ 文件夹即可播放';
+    return false;
+  }
+}
 
 function initMusic() {
   const btn = document.getElementById('music-btn');
-  const player = document.getElementById('music-player');
-  const iframe = document.getElementById('music-iframe');
 
-  btn.addEventListener('click', () => {
-    if (!musicInitialized) {
-      iframe.src = 'https://music.163.com/outchain/player?type=0&id='
-        + CONFIG.musicPlaylistId + '&auto=1&height=66';
-      musicInitialized = true;
-    }
+  btn.addEventListener('click', async () => {
     musicOn = !musicOn;
+
     if (musicOn) {
       btn.classList.remove('off');
-      btn.textContent = '♪';
-      player.classList.remove('hidden');
-      // 重新加载 iframe 开始播放
-      if (musicInitialized) {
-        iframe.src = iframe.src;
+
+      // 优先使用本地 MP3
+      if (localPlaylist.length > 0) {
+        if (!localAudio) {
+          localAudio = new Audio();
+          localAudio.loop = false;
+          localAudio.volume = 0.25;
+          localAudio.addEventListener('ended', () => {
+            localTrackIdx = (localTrackIdx + 1) % localPlaylist.length;
+            localAudio.src = localPlaylist[localTrackIdx];
+            localAudio.play().catch(() => {});
+          });
+        }
+        localAudio.src = localPlaylist[localTrackIdx];
+        localAudio.play().catch(() => {
+          // 如果本地播放失败，回退到环境音乐
+          initAmbientFallback();
+        });
+      } else {
+        initAmbientFallback();
       }
     } else {
       btn.classList.add('off');
-      btn.textContent = '♪';
-      player.classList.add('hidden');
-      iframe.src = '';
+      if (ambientNodes) {
+        ambientNodes.fadeOut();
+      }
+      if (localAudio) {
+        localAudio.pause();
+      }
     }
   });
+
+  function initAmbientFallback() {
+    if (!ambientNodes) {
+      try {
+        ambientNodes = createAmbientMusic();
+      } catch (e) {
+        console.warn('环境音乐初始化失败:', e);
+        return;
+      }
+    }
+    ambientNodes.fadeIn();
+  }
 }
 
 // ================================================================
@@ -783,8 +1009,8 @@ function initMusic() {
 async function main() {
   setupFallback();
   initMusic();
+  tryLoadLocalMusic();
 
-  // 先隐藏提示（键盘模式提示在 fallback 不可用时再显示）
   hintEl.style.opacity = '0';
 
   const cameraReady = await initMediaPipe();
