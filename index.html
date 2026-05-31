@@ -135,8 +135,6 @@ const CONFIG = {
   modelLoadTimeout: 30,
   // 手部跟随灵敏度
   handFollowSpeed: 0.08,
-  // 颜色变化速度
-  hueShiftSpeed: 0.15,
 };
 
 // ================================================================
@@ -170,11 +168,23 @@ function createGlowTexture() {
   return new THREE.CanvasTexture(c);
 }
 
-// 炫彩 HSL 调色板 — 每颗粒子有独立色相
-function hslToColor(h, s, l) {
-  const col = new THREE.Color();
-  col.setHSL(h, s, l);
-  return col;
+// 粉色 + 蓝调固定调色板
+const pinkBluePalette = [
+  // 粉色系
+  '#ff6b9d', '#ff8fab', '#ffb3c6', '#ff477e',
+  '#ff3366', '#ff7096', '#ffc2d1', '#ff4081',
+  '#ff5e8a', '#ff9f9f', '#ffb8c6', '#ffccd5',
+  // 蓝调系
+  '#6ba3ff', '#8fb3ff', '#b3d4ff', '#477eff',
+  '#6699ff', '#c2d6ff', '#4080ff', '#9fc5ff',
+  '#7ba8ff', '#a3c4ff', '#5b8def', '#88a8ff',
+  // 粉蓝过渡
+  '#d47fff', '#ff7bd4', '#b37fff', '#c48fff',
+  '#e090ff', '#f090e0', '#d080f0', '#e880d0',
+];
+
+function paletteColor(hex) {
+  return new THREE.Color(hex);
 }
 
 // 粒子几何体
@@ -184,10 +194,8 @@ const baseColors = new Float32Array(CONFIG.particleCount * 3);
 const colors = new Float32Array(CONFIG.particleCount * 3);
 const sizes = new Float32Array(CONFIG.particleCount);
 
-// 每颗粒子的基础色相（暖色系 + 彩虹扩展）
-const baseHues = new Float32Array(CONFIG.particleCount);
-const baseSats = new Float32Array(CONFIG.particleCount);
-const baseLights = new Float32Array(CONFIG.particleCount);
+// 每颗粒子的基础颜色索引
+const baseColorIndices = new Uint16Array(CONFIG.particleCount);
 
 for (let i = 0; i < CONFIG.particleCount; i++) {
   const theta = Math.random() * Math.PI * 2;
@@ -197,15 +205,9 @@ for (let i = 0; i < CONFIG.particleCount; i++) {
   positions[i * 3 + 1] = Math.sin(phi) * Math.sin(theta) * r;
   positions[i * 3 + 2] = Math.cos(phi) * r;
 
-  // 暖色系色相：粉红(0.93) 到 金色(0.13)，覆盖红-橙-黄-粉
-  const hue = 0.88 + Math.random() * 0.25; // 0.88~1.13 环绕
-  const sat = 0.6 + Math.random() * 0.4;
-  const light = 0.4 + Math.random() * 0.3;
-  baseHues[i] = hue % 1;
-  baseSats[i] = sat;
-  baseLights[i] = light;
-
-  const col = hslToColor(baseHues[i], sat, light);
+  const colorIdx = Math.floor(Math.random() * pinkBluePalette.length);
+  baseColorIndices[i] = colorIdx;
+  const col = paletteColor(pinkBluePalette[colorIdx]);
   baseColors[i * 3] = col.r;
   baseColors[i * 3 + 1] = col.g;
   baseColors[i * 3 + 2] = col.b;
@@ -243,14 +245,13 @@ for (let i = 0; i < starsCount; i++) {
   starsPos[i * 3 + 1] = (Math.random() - 0.5) * 20;
   starsPos[i * 3 + 2] = -5 - Math.random() * 15;
   const brightness = 0.3 + Math.random() * 0.7;
-  const hue = 0.55 + Math.random() * 0.15;
-  const col = hslToColor(hue, 0.3, brightness * 0.6);
-  starsBaseCol[i * 3] = col.r;
-  starsBaseCol[i * 3 + 1] = col.g;
-  starsBaseCol[i * 3 + 2] = col.b;
-  starsCol[i * 3] = col.r;
-  starsCol[i * 3 + 1] = col.g;
-  starsCol[i * 3 + 2] = col.b;
+  const col = paletteColor(pinkBluePalette[Math.floor(Math.random() * pinkBluePalette.length)]);
+  starsBaseCol[i * 3] = col.r * brightness * 0.5;
+  starsBaseCol[i * 3 + 1] = col.g * brightness * 0.5;
+  starsBaseCol[i * 3 + 2] = col.b * brightness * 0.5;
+  starsCol[i * 3] = starsBaseCol[i * 3];
+  starsCol[i * 3 + 1] = starsBaseCol[i * 3 + 1];
+  starsCol[i * 3 + 2] = starsBaseCol[i * 3 + 2];
 }
 starsGeo.setAttribute('position', new THREE.BufferAttribute(starsPos, 3));
 starsGeo.setAttribute('color', new THREE.BufferAttribute(starsCol, 3));
@@ -270,7 +271,7 @@ for (let i = 0; i < auraCount; i++) {
   auraPos[i * 3] = (Math.random() - 0.5) * 12;
   auraPos[i * 3 + 1] = (Math.random() - 0.5) * 8;
   auraPos[i * 3 + 2] = (Math.random() - 0.5) * 4;
-  const col = hslToColor(0.9 + Math.random() * 0.1, 0.8, 0.5 + Math.random() * 0.4);
+  const col = paletteColor(pinkBluePalette[Math.floor(Math.random() * pinkBluePalette.length)]);
   auraColArr[i * 3] = col.r;
   auraColArr[i * 3 + 1] = col.g;
   auraColArr[i * 3 + 2] = col.b;
@@ -283,6 +284,9 @@ const auraMat = new THREE.PointsMaterial({
 });
 const aura = new THREE.Points(auraGeo, auraMat);
 scene.add(aura);
+
+// 保存光环基础颜色（用于脉动）
+const baseAuraColors = new Float32Array(auraColArr);
 
 // ================================================================
 // 3. 文字采样（更高分辨率 + 更多采样点）
@@ -525,27 +529,32 @@ async function initMediaPipe() {
 
   const cameraPromise = (async () => {
     try {
+      loadingSub.textContent = '正在加载模型文件…';
+
+      // 显式初始化，触发模型下载和 WASM 编译
+      await hands.initialize();
+
       loadingSub.textContent = '正在请求摄像头权限…';
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480, facingMode: 'user' },
-      });
-      video.srcObject = stream;
-      await video.play();
 
-      const preview = document.createElement('video');
-      preview.id = 'video-preview';
-      preview.srcObject = stream;
-      preview.autoplay = true;
-      preview.playsInline = true;
-      preview.muted = true;
-      document.body.appendChild(preview);
-
-      loadingSub.textContent = '正在启动手势识别…';
+      // Camera 内部会调用 getUserMedia，不要手动获取
       const cameraUtil = new Camera(video, {
         onFrame: async () => { await hands.send({ image: video }); },
         width: 640, height: 480,
       });
       await cameraUtil.start();
+
+      // 从 Camera 获取已在播放的流来创建预览
+      const stream = video.srcObject;
+      if (stream) {
+        const preview = document.createElement('video');
+        preview.id = 'video-preview';
+        preview.srcObject = stream;
+        preview.autoplay = true;
+        preview.playsInline = true;
+        preview.muted = true;
+        document.body.appendChild(preview);
+      }
+
       clearInterval(progressTimer);
       progressBar.style.width = '100%';
       return true;
@@ -599,32 +608,32 @@ function updateParticleColors(gesture, openness, time) {
     const i3 = i * 3;
     const phase = particlePhases[i];
 
-    // 色相随时间/开放度偏移
-    let hueShift = time * CONFIG.hueShiftSpeed * (0.5 + openness * 0.5);
-    if (G > 0) hueShift *= 1.8; // 文字模式色相变化更快
-
-    const hue = (baseHues[i] + hueShift * 0.1 + phase * 0.05) % 1;
-    const sat = baseSats[i] * (0.7 + openness * 0.5);
-    let light = baseLights[i];
+    // 基础颜色不变，仅随张合度和呼吸脉冲调整亮度
+    const baseR = baseColors[i3];
+    const baseG = baseColors[i3 + 1];
+    const baseB = baseColors[i3 + 2];
 
     if (G > 0) {
       const pulse = 0.75 + 0.25 * Math.sin(time * CONFIG.colorPulseSpeed + phase);
-      light = light * pulse * (0.75 + openness * 0.5);
+      const intensity = pulse * (0.75 + openness * 0.5);
+      col[i3]     = Math.min(1, baseR * intensity * 1.3);
+      col[i3 + 1] = Math.min(1, baseG * intensity * 0.9);
+      col[i3 + 2] = Math.min(1, baseB * intensity * 0.8);
     } else {
       const pulse = 0.9 + 0.1 * Math.sin(time * 1.5 + phase);
-      light = light * (0.35 + openness * 0.7) * pulse;
+      const intensity = (0.35 + openness * 0.7) * pulse;
+      col[i3]     = baseR * intensity;
+      col[i3 + 1] = baseG * intensity;
+      col[i3 + 2] = baseB * intensity;
     }
 
-    // 闪烁粒子：部分粒子随机变亮
+    // 偶尔闪烁
     sparkleTimers[i] += 0.05;
     if (Math.sin(sparkleTimers[i] * 3 + phase) > 0.92 && Math.random() > 0.7) {
-      light = Math.min(1, light * 2.5);
+      col[i3]     = Math.min(1, col[i3] * 2.2);
+      col[i3 + 1] = Math.min(1, col[i3 + 1] * 2.2);
+      col[i3 + 2] = Math.min(1, col[i3 + 2] * 2.2);
     }
-
-    const tempCol = hslToColor(hue, Math.min(1, sat), Math.min(1, Math.max(0.05, light)));
-    col[i3] = tempCol.r;
-    col[i3 + 1] = tempCol.g;
-    col[i3 + 2] = tempCol.b;
   }
   geometry.attributes.color.needsUpdate = true;
 
@@ -656,27 +665,21 @@ function updateStarColors(gesture, openness, time) {
 function updateAura(gesture, openness, time) {
   if (gesture > 0) {
     auraMat.opacity += (0.45 - auraMat.opacity) * 2 * 0.016;
-    auraMat.color.setHSL(0.94, 0.9, 0.5 + openness * 0.3);
   } else {
     auraMat.opacity += (0.15 + openness * 0.15 - auraMat.opacity) * 2 * 0.016;
-    auraMat.color.setHSL(0.94, 0.7, 0.35 + openness * 0.25);
   }
   aura.rotation.y += 0.003;
   aura.rotation.x += 0.002;
 
-  // 环境光颜色随手势变化
+  // 环境光保持固定粉蓝调，随呼吸脉动
   const aCol = auraGeo.attributes.color.array;
   for (let i = 0; i < auraCount; i++) {
     const i3 = i * 3;
-    const hueShift = time * 0.1;
-    const tempCol = hslToColor(
-      (0.9 + hueShift + i * 0.001) % 1,
-      0.7 + openness * 0.3,
-      0.4 + openness * 0.4 + Math.sin(time * 2 + i) * 0.1
-    );
-    aCol[i3] = tempCol.r;
-    aCol[i3 + 1] = tempCol.g;
-    aCol[i3 + 2] = tempCol.b;
+    const pulse = 0.85 + 0.15 * Math.sin(time * 1.8 + i * 0.7);
+    const intensity = pulse * (0.5 + openness * 0.5);
+    aCol[i3] = Math.min(1, baseAuraColors[i3] * intensity * (gesture > 0 ? 1.4 : 1));
+    aCol[i3 + 1] = Math.min(1, baseAuraColors[i3 + 1] * intensity * (gesture > 0 ? 1.1 : 1));
+    aCol[i3 + 2] = Math.min(1, baseAuraColors[i3 + 2] * intensity * 1.0);
   }
   auraGeo.attributes.color.needsUpdate = true;
 }
