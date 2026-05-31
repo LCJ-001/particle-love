@@ -2,144 +2,222 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>粒子之恋 - 3D Particle Love</title>
 <style>
   *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  @font-face {
+    font-family: 'LoveFont';
+    src: local('Microsoft YaHei'), local('PingFang SC'), local('SimHei');
+  }
+
   body {
     background: #050510; overflow: hidden;
-    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
-    user-select: none; -webkit-user-select: none;
-    height: 100dvh; width: 100dvw;
+    font-family: 'LoveFont', "Microsoft YaHei", "PingFang SC", sans-serif;
+    user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+    height: 100dvh; width: 100dvw; touch-action: manipulation;
   }
-  canvas { display: block; }
+  canvas { display: block; position: fixed; inset: 0; }
 
+  /* 加载层 */
   #loading {
-    position: fixed; inset: 0; z-index: 100; background: #050510;
+    position: fixed; inset: 0; z-index: 100; background: radial-gradient(ellipse at center, #0a0a20 0%, #050510 70%);
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    transition: opacity 0.6s;
+    transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1);
   }
   #loading.hidden { opacity: 0; pointer-events: none; }
+  #loading-icon {
+    width: 80px; height: 80px; margin-bottom: 24px;
+    border-radius: 50%; position: relative;
+  }
+  #loading-icon::before {
+    content: ''; position: absolute; inset: -6px; border-radius: 50%;
+    background: conic-gradient(from 0deg, transparent, #ff6b9d, #6ba3ff, transparent);
+    animation: spin 2s linear infinite;
+  }
+  #loading-icon::after {
+    content: '♥'; position: absolute; inset: 4px; border-radius: 50%;
+    background: #0a0a20; display: flex; align-items: center; justify-content: center;
+    color: #ff6b9d; font-size: 2rem; line-height: 72px; text-align: center;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
   #loading-text {
-    color: #ff6b9d; font-size: 1.3rem; letter-spacing: 0.15em;
-    animation: pulse 1.5s ease-in-out infinite;
+    color: #ff6b9d; font-size: 1.25rem; letter-spacing: 0.12em;
+    animation: softPulse 2s ease-in-out infinite;
   }
-  #loading-sub { color: #ff8fab80; font-size: 0.85rem; margin-top: 10px; }
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
-
-  #ui {
-    position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
-    padding: 16px 20px 24px;
-    display: flex; flex-direction: column; align-items: center; gap: 8px;
-    pointer-events: none;
-    background: linear-gradient(transparent, rgba(5,5,16,0.85) 40%);
+  @keyframes softPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.97); }
   }
-  #gesture-label {
-    color: #fff; font-size: 1.1rem; letter-spacing: 0.08em;
-    text-shadow: 0 0 20px rgba(255,107,157,0.6); transition: all 0.3s;
-  }
-  #gesture-label.active { color: #ff6b9d; font-size: 1.4rem; }
-  #openness-bar-wrap {
-    width: 200px; height: 4px; background: rgba(255,255,255,0.15);
-    border-radius: 2px; overflow: hidden;
-  }
-  #openness-bar {
-    height: 100%; background: linear-gradient(90deg, #ff6b9d, #ffd166);
-    border-radius: 2px; transition: width 0.15s;
-  }
-
-  #video-preview {
-    position: fixed; bottom: 20px; right: 20px; z-index: 10;
-    width: 140px; height: 105px; border-radius: 12px;
-    border: 2px solid rgba(255,107,157,0.4);
-    object-fit: cover; transform: scaleX(-1);
-    opacity: 0.6; transition: opacity 0.4s;
-  }
-  #video-preview:hover { opacity: 1; }
-
-  #hint {
-    position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 10;
-    color: rgba(255,255,255,0.5); font-size: 0.78rem;
-    pointer-events: none; transition: opacity 0.5s;
-  }
-
+  #loading-sub { color: rgba(255,143,171,0.55); font-size: 0.78rem; margin-top: 10px; letter-spacing: 0.05em; }
   #loading-progress-wrap {
-    width: 220px; height: 3px; background: rgba(255,255,255,0.1);
-    border-radius: 2px; margin-top: 14px; overflow: hidden;
+    width: 240px; height: 2px; background: rgba(255,255,255,0.08);
+    border-radius: 1px; margin-top: 20px; overflow: hidden;
   }
   #loading-progress {
-    height: 100%; width: 0%; background: linear-gradient(90deg, #ff6b9d, #ffd166);
-    border-radius: 2px; transition: width 0.3s;
+    height: 100%; width: 0%; border-radius: 1px;
+    background: linear-gradient(90deg, #ff6b9d, #6ba3ff, #ffb3c6);
+    transition: width 0.4s ease-out;
   }
 
+  /* 底部状态栏 */
+  #ui {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
+    padding: 12px 20px 20px; pointer-events: none;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    background: linear-gradient(transparent, rgba(5,5,16,0.9) 50%);
+  }
+  #gesture-label {
+    color: #fff; font-size: 1.05rem; letter-spacing: 0.1em; font-weight: 500;
+    text-shadow: 0 0 18px rgba(255,107,157,0.5); transition: all 0.35s;
+  }
+  #gesture-label.active { color: #ff6b9d; font-size: 1.35rem; text-shadow: 0 0 24px rgba(255,107,157,0.7); }
+  #shape-hint {
+    color: rgba(255,255,255,0.3); font-size: 0.68rem; letter-spacing: 0.05em;
+    transition: all 0.3s;
+  }
+  #openness-bar-wrap {
+    width: 180px; height: 2px; background: rgba(255,255,255,0.1);
+    border-radius: 1px; overflow: hidden;
+  }
+  #openness-bar {
+    height: 100%; border-radius: 1px;
+    background: linear-gradient(90deg, #ff6b9d, #6ba3ff, #ffb3c6);
+    transition: width 0.2s ease-out;
+  }
+
+  /* 提示文字 */
+  #hint {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 10;
+    color: rgba(255,255,255,0.35); font-size: 0.7rem; letter-spacing: 0.04em;
+    pointer-events: none; transition: opacity 0.6s;
+    background: rgba(0,0,0,0.3); padding: 5px 14px; border-radius: 20px;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  }
+
+  /* 摄像头预览 */
+  #video-preview {
+    position: fixed; bottom: 16px; right: 12px; z-index: 12;
+    width: 110px; height: 82px; border-radius: 10px; object-fit: cover;
+    transform: scaleX(-1); opacity: 0.45; transition: opacity 0.4s;
+    border: 1.5px solid rgba(255,107,157,0.3); pointer-events: none;
+  }
+  #video-preview:hover { opacity: 0.8; }
+
+  /* 音乐按钮 */
   #music-btn {
     position: fixed; top: 16px; right: 16px; z-index: 20;
-    width: 38px; height: 38px; border-radius: 50%;
-    border: 1.5px solid rgba(255,107,157,0.5);
-    background: rgba(10,5,20,0.7); color: #ff6b9d;
-    font-size: 1.1rem; cursor: pointer;
+    width: 40px; height: 40px; border-radius: 50%;
+    border: 1.5px solid rgba(255,107,157,0.45);
+    background: rgba(10,5,22,0.7); color: #ff6b9d;
+    font-size: 1.05rem; cursor: pointer;
     backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
     transition: all 0.3s; display: flex; align-items: center; justify-content: center;
-    pointer-events: auto;
+    pointer-events: auto; letter-spacing: 0;
   }
-  #music-btn:hover { border-color: #ff6b9d; box-shadow: 0 0 16px rgba(255,107,157,0.4); }
-  #music-btn.off { color: rgba(255,255,255,0.4); border-color: rgba(255,255,255,0.2); }
+  #music-btn:hover { border-color: #ff6b9d; box-shadow: 0 0 20px rgba(255,107,157,0.35); }
+  #music-btn.on { background: rgba(255,107,157,0.15); }
+  #music-btn.off { color: rgba(255,255,255,0.3); border-color: rgba(255,255,255,0.15); }
 
-  #local-music-hint {
-    position: fixed; top: 60px; right: 10px; z-index: 20;
-    color: rgba(255,255,255,0.35); font-size: 0.7rem;
-    pointer-events: none; text-align: right; line-height: 1.4;
+  /* QQ音乐播放器 */
+  #music-player {
+    position: fixed; bottom: 90px; right: 8px; z-index: 20;
+    width: 300px; height: 66px; pointer-events: auto;
+    border-radius: 12px; overflow: hidden; opacity: 0.88;
+    border: 1px solid rgba(255,107,157,0.2);
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  }
+  #music-player.hidden { opacity: 0; pointer-events: none; transform: translateY(8px) scale(0.95); }
+  #music-player iframe { width: 100%; height: 66px; border: none; border-radius: 12px; }
+  #music-song-input {
+    position: fixed; top: 62px; right: 16px; z-index: 20; pointer-events: auto;
+    display: flex; gap: 6px; opacity: 0; transform: translateY(-4px);
+    transition: all 0.3s; background: rgba(10,5,22,0.85);
+    padding: 6px 8px; border-radius: 10px;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,107,157,0.25);
+  }
+  #music-song-input.show { opacity: 1; transform: translateY(0); }
+  #music-song-input input {
+    width: 160px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 6px; color: #fff; padding: 4px 10px; font-size: 0.75rem; outline: none;
+  }
+  #music-song-input input::placeholder { color: rgba(255,255,255,0.3); }
+  #music-song-input button {
+    background: rgba(255,107,157,0.25); border: none; border-radius: 6px;
+    color: #ff6b9d; padding: 4px 10px; font-size: 0.75rem; cursor: pointer;
+  }
+
+  /* 响应式 */
+  @media (max-width: 480px) {
+    #gesture-label { font-size: 0.95rem; }
+    #gesture-label.active { font-size: 1.2rem; }
+    #music-player { width: 260px; right: 2px; }
+    #video-preview { width: 80px; height: 60px; bottom: 10px; right: 6px; }
+    #hint { font-size: 0.65rem; padding: 4px 10px; }
   }
 </style>
 </head>
 <body>
 
+<!-- 加载层 -->
 <div id="loading">
-  <div id="loading-text">正在加载手势识别模型…</div>
-  <div id="loading-sub">模型约 18MB，首次加载需耐心等待</div>
+  <div id="loading-icon"></div>
+  <div id="loading-text">粒子之恋</div>
+  <div id="loading-sub">正在初始化…</div>
   <div id="loading-progress-wrap"><div id="loading-progress"></div></div>
 </div>
 
-<button id="music-btn" title="音乐">♪</button>
-<div id="local-music-hint"></div>
+<!-- 音乐控制 -->
+<button id="music-btn" class="off" title="QQ音乐">♪</button>
+<div id="music-song-input">
+  <input type="text" id="song-id-input" placeholder="QQ音乐歌曲ID">
+  <button id="song-id-btn">播放</button>
+</div>
+<div id="music-player" class="hidden">
+  <iframe id="music-iframe" allow="autoplay" loading="lazy"></iframe>
+</div>
 
+<!-- 摄像头 -->
 <video id="input-video" autoplay playsinline muted style="display:none"></video>
 
+<!-- 状态栏 -->
 <div id="ui">
-  <div id="gesture-label">等待手势…</div>
+  <div id="gesture-label">粒子宇宙</div>
+  <div id="shape-hint"></div>
   <div id="openness-bar-wrap"><div id="openness-bar" style="width:50%"></div></div>
 </div>
 
-<div id="hint">按 0/1/2/3/4/5 切换形态 &nbsp;|&nbsp; 滑动鼠标控制张合</div>
+<div id="hint">按 0-5 切换形态 · 鼠标控制张合</div>
 
 <script src="js/three.min.js"></script>
 <script src="js/camera_utils.js"></script>
 <script src="js/hands.js"></script>
 
 <script>
-// ================================================================
-// 1. 配置
-// ================================================================
+// ╔══════════════════════════════════════════════════════════════╗
+// ║              粒子之恋 — 3D Particle Love v2                ║
+// ╚══════════════════════════════════════════════════════════════╝
+
 const CONFIG = {
   particleCount: 10000,
   sphereRadius: 3,
-  textWidth: 5.5,
-  textHeight: 2.8,
+  shapeScale: 5.8,
   transitionSpeed: 4.5,
   cameraZ: 9,
   opennessSmoothing: 0.45,
   landmarkSmoothing: 0.55,
-  gestureDebounceFrames: 5,
   colorPulseSpeed: 2.5,
-  glowIntensity: 1.4,
   modelLoadTimeout: 45,
-  // 手部跟随灵敏度
   handFollowSpeed: 0.08,
+  // QQ音乐默认歌曲ID（周杰伦 - 告白气球）
+  defaultQQSongId: '102433286',
 };
 
-// ================================================================
-// 2. Three.js 初始化
-// ================================================================
+// ═══════════════════ Three.js 初始化 ═══════════════════
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.5, 50);
 camera.position.set(0, 0, CONFIG.cameraZ);
@@ -159,1124 +237,675 @@ function createGlowTexture() {
   const ctx = c.getContext('2d');
   const g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
   g.addColorStop(0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.06, 'rgba(255,240,245,0.95)');
-  g.addColorStop(0.2, 'rgba(255,150,180,0.7)');
-  g.addColorStop(0.5, 'rgba(255,80,120,0.15)');
+  g.addColorStop(0.05, 'rgba(255,240,245,0.95)');
+  g.addColorStop(0.18, 'rgba(255,150,190,0.7)');
+  g.addColorStop(0.45, 'rgba(255,80,130,0.15)');
   g.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, size, size);
   return new THREE.CanvasTexture(c);
 }
 
-// 粉色 + 蓝调固定调色板
+// 粉色+蓝调色板
 const pinkBluePalette = [
-  // 粉色系
-  '#ff6b9d', '#ff8fab', '#ffb3c6', '#ff477e',
-  '#ff3366', '#ff7096', '#ffc2d1', '#ff4081',
-  '#ff5e8a', '#ff9f9f', '#ffb8c6', '#ffccd5',
-  // 蓝调系
-  '#6ba3ff', '#8fb3ff', '#b3d4ff', '#477eff',
-  '#6699ff', '#c2d6ff', '#4080ff', '#9fc5ff',
-  '#7ba8ff', '#a3c4ff', '#5b8def', '#88a8ff',
-  // 粉蓝过渡
-  '#d47fff', '#ff7bd4', '#b37fff', '#c48fff',
-  '#e090ff', '#f090e0', '#d080f0', '#e880d0',
+  '#ff6b9d','#ff8fab','#ffb3c6','#ff477e','#ff3366','#ff7096',
+  '#ffc2d1','#ff4081','#ff5e8a','#ff9f9f','#ffb8c6','#ffccd5',
+  '#6ba3ff','#8fb3ff','#b3d4ff','#477eff','#6699ff','#c2d6ff',
+  '#4080ff','#9fc5ff','#7ba8ff','#a3c4ff','#5b8def','#88a8ff',
+  '#d47fff','#ff7bd4','#b37fff','#c48fff','#e090ff','#f090e0',
 ];
 
-function paletteColor(hex) {
-  return new THREE.Color(hex);
-}
+function paletteColor(hex) { return new THREE.Color(hex); }
 
 // 粒子几何体
 const geometry = new THREE.BufferGeometry();
-const positions = new Float32Array(CONFIG.particleCount * 3);
-const baseColors = new Float32Array(CONFIG.particleCount * 3);
-const colors = new Float32Array(CONFIG.particleCount * 3);
-const sizes = new Float32Array(CONFIG.particleCount);
+const N = CONFIG.particleCount;
+const positions = new Float32Array(N * 3);
+const baseColors = new Float32Array(N * 3);
+const colors = new Float32Array(N * 3);
+const sizes = new Float32Array(N);
+const baseColorIndices = new Uint16Array(N);
 
-// 每颗粒子的基础颜色索引
-const baseColorIndices = new Uint16Array(CONFIG.particleCount);
-
-for (let i = 0; i < CONFIG.particleCount; i++) {
+for (let i = 0; i < N; i++) {
   const theta = Math.random() * Math.PI * 2;
   const phi = Math.acos(2 * Math.random() - 1);
   const r = CONFIG.sphereRadius * (0.6 + Math.random() * 0.4);
-  positions[i * 3] = Math.sin(phi) * Math.cos(theta) * r;
-  positions[i * 3 + 1] = Math.sin(phi) * Math.sin(theta) * r;
-  positions[i * 3 + 2] = Math.cos(phi) * r;
+  positions[i*3]   = Math.sin(phi)*Math.cos(theta)*r;
+  positions[i*3+1] = Math.sin(phi)*Math.sin(theta)*r;
+  positions[i*3+2] = Math.cos(phi)*r;
 
-  const colorIdx = Math.floor(Math.random() * pinkBluePalette.length);
-  baseColorIndices[i] = colorIdx;
-  const col = paletteColor(pinkBluePalette[colorIdx]);
-  baseColors[i * 3] = col.r;
-  baseColors[i * 3 + 1] = col.g;
-  baseColors[i * 3 + 2] = col.b;
-  colors[i * 3] = col.r;
-  colors[i * 3 + 1] = col.g;
-  colors[i * 3 + 2] = col.b;
-
-  sizes[i] = 0.02 + Math.random() * 0.08;
+  const ci = Math.floor(Math.random()*pinkBluePalette.length);
+  baseColorIndices[i] = ci;
+  const col = paletteColor(pinkBluePalette[ci]);
+  baseColors[i*3]=col.r; baseColors[i*3+1]=col.g; baseColors[i*3+2]=col.b;
+  colors[i*3]=col.r; colors[i*3+1]=col.g; colors[i*3+2]=col.b;
+  sizes[i] = 0.02 + Math.random()*0.08;
 }
-
 geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
 const material = new THREE.PointsMaterial({
-  size: 0.10,
-  map: createGlowTexture(),
-  vertexColors: true,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-  transparent: true,
-  opacity: 0.85,
+  size: 0.10, map: createGlowTexture(), vertexColors: true,
+  blending: THREE.AdditiveBlending, depthWrite: false,
+  transparent: true, opacity: 0.85,
 });
-
 const particles = new THREE.Points(geometry, material);
 scene.add(particles);
 
 // 背景星场
 const starsGeo = new THREE.BufferGeometry();
 const starsCount = 1200;
-const starsPos = new Float32Array(starsCount * 3);
-const starsBaseCol = new Float32Array(starsCount * 3);
-const starsCol = new Float32Array(starsCount * 3);
-for (let i = 0; i < starsCount; i++) {
-  starsPos[i * 3] = (Math.random() - 0.5) * 30;
-  starsPos[i * 3 + 1] = (Math.random() - 0.5) * 20;
-  starsPos[i * 3 + 2] = -5 - Math.random() * 15;
-  const brightness = 0.3 + Math.random() * 0.7;
-  const col = paletteColor(pinkBluePalette[Math.floor(Math.random() * pinkBluePalette.length)]);
-  starsBaseCol[i * 3] = col.r * brightness * 0.5;
-  starsBaseCol[i * 3 + 1] = col.g * brightness * 0.5;
-  starsBaseCol[i * 3 + 2] = col.b * brightness * 0.5;
-  starsCol[i * 3] = starsBaseCol[i * 3];
-  starsCol[i * 3 + 1] = starsBaseCol[i * 3 + 1];
-  starsCol[i * 3 + 2] = starsBaseCol[i * 3 + 2];
+const starsPos = new Float32Array(starsCount*3);
+const starsBaseCol = new Float32Array(starsCount*3);
+const starsCol = new Float32Array(starsCount*3);
+for (let i=0;i<starsCount;i++) {
+  starsPos[i*3]=(Math.random()-0.5)*30; starsPos[i*3+1]=(Math.random()-0.5)*20; starsPos[i*3+2]=-5-Math.random()*15;
+  const col=paletteColor(pinkBluePalette[Math.floor(Math.random()*pinkBluePalette.length)]);
+  const b=0.3+Math.random()*0.7;
+  starsBaseCol[i*3]=col.r*b*0.5; starsBaseCol[i*3+1]=col.g*b*0.5; starsBaseCol[i*3+2]=col.b*b*0.5;
+  starsCol[i*3]=starsBaseCol[i*3]; starsCol[i*3+1]=starsBaseCol[i*3+1]; starsCol[i*3+2]=starsBaseCol[i*3+2];
 }
-starsGeo.setAttribute('position', new THREE.BufferAttribute(starsPos, 3));
-starsGeo.setAttribute('color', new THREE.BufferAttribute(starsCol, 3));
-const starsMat = new THREE.PointsMaterial({
-  size: 0.025, vertexColors: true,
-  blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55,
-});
-const stars = new THREE.Points(starsGeo, starsMat);
-scene.add(stars);
+starsGeo.setAttribute('position',new THREE.BufferAttribute(starsPos,3));
+starsGeo.setAttribute('color',new THREE.BufferAttribute(starsCol,3));
+const starsMat=new THREE.PointsMaterial({size:0.025,vertexColors:true,blending:THREE.AdditiveBlending,depthWrite:false,transparent:true,opacity:0.55});
+const stars=new THREE.Points(starsGeo,starsMat); scene.add(stars);
 
 // 环境光点
-const auraGeo = new THREE.BufferGeometry();
-const auraCount = 300;
-const auraPos = new Float32Array(auraCount * 3);
-const auraColArr = new Float32Array(auraCount * 3);
-for (let i = 0; i < auraCount; i++) {
-  auraPos[i * 3] = (Math.random() - 0.5) * 12;
-  auraPos[i * 3 + 1] = (Math.random() - 0.5) * 8;
-  auraPos[i * 3 + 2] = (Math.random() - 0.5) * 4;
-  const col = paletteColor(pinkBluePalette[Math.floor(Math.random() * pinkBluePalette.length)]);
-  auraColArr[i * 3] = col.r;
-  auraColArr[i * 3 + 1] = col.g;
-  auraColArr[i * 3 + 2] = col.b;
+const auraGeo=new THREE.BufferGeometry();
+const auraCount=300;
+const auraPos=new Float32Array(auraCount*3);
+const auraColArr=new Float32Array(auraCount*3);
+for (let i=0;i<auraCount;i++) {
+  auraPos[i*3]=(Math.random()-0.5)*12; auraPos[i*3+1]=(Math.random()-0.5)*8; auraPos[i*3+2]=(Math.random()-0.5)*4;
+  const col=paletteColor(pinkBluePalette[Math.floor(Math.random()*pinkBluePalette.length)]);
+  auraColArr[i*3]=col.r; auraColArr[i*3+1]=col.g; auraColArr[i*3+2]=col.b;
 }
-auraGeo.setAttribute('position', new THREE.BufferAttribute(auraPos, 3));
-auraGeo.setAttribute('color', new THREE.BufferAttribute(auraColArr, 3));
-const auraMat = new THREE.PointsMaterial({
-  size: 0.06, vertexColors: true,
-  blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.25,
-});
-const aura = new THREE.Points(auraGeo, auraMat);
-scene.add(aura);
+auraGeo.setAttribute('position',new THREE.BufferAttribute(auraPos,3));
+auraGeo.setAttribute('color',new THREE.BufferAttribute(auraColArr,3));
+const auraMat=new THREE.PointsMaterial({size:0.06,vertexColors:true,blending:THREE.AdditiveBlending,depthWrite:false,transparent:true,opacity:0.25});
+const aura=new THREE.Points(auraGeo,auraMat); scene.add(aura);
+const baseAuraColors=new Float32Array(auraColArr);
 
-// 保存光环基础颜色（用于脉动）
-const baseAuraColors = new Float32Array(auraColArr);
+// ═══════════════════ 形状采样 ═══════════════════
 
-// ================================================================
-// 3. 文字采样（更高分辨率 + 更多采样点）
-// ================================================================
-function sampleTextPositions(text, fontSize, canvasW, canvasH, count) {
-  const canvas = document.createElement('canvas');
-  canvas.width = canvasW;
-  canvas.height = canvasH;
-  const ctx = canvas.getContext('2d');
-
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `bold ${fontSize}px "Microsoft YaHei", "PingFang SC", "SimHei", "Noto Sans SC", sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, canvasW / 2, canvasH / 2);
-
-  const imageData = ctx.getImageData(0, 0, canvasW, canvasH);
-  const data = imageData.data;
-  const litPixels = [];
-
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] > 80) {
-      litPixels.push({ x: (i / 4) % canvasW, y: Math.floor((i / 4) / canvasW) });
-    }
+function samplePixels(canvas, count) {
+  const ctx=canvas.getContext('2d');
+  const img=ctx.getImageData(0,0,canvas.width,canvas.height);
+  const px=[];
+  for (let i=0;i<img.data.length;i+=4) {
+    if (img.data[i+3]>60) px.push({x:(i/4)%canvas.width, y:Math.floor((i/4)/canvas.width)});
   }
-
-  if (litPixels.length < 10) {
-    console.warn('文字采样像素不足:', text);
-    return Array.from({ length: count }, () => ({
-      x: (Math.random() - 0.5) * 2,
-      y: (Math.random() - 0.5) * 2,
-      z: (Math.random() - 0.5) * 0.3,
-    }));
+  if (px.length<10) return Array.from({length:count},()=>({x:(Math.random()-0.5)*2,y:(Math.random()-0.5)*2,z:(Math.random()-0.5)*0.25}));
+  const s=[];
+  for (let i=0;i<count;i++) {
+    const p=px[Math.floor(Math.random()*px.length)];
+    s.push({x:(p.x/canvas.width-0.5)*2, y:-(p.y/canvas.height-0.5)*2, z:(Math.random()-0.5)*0.25});
   }
-
-  const samples = [];
-  for (let i = 0; i < count; i++) {
-    const p = litPixels[Math.floor(Math.random() * litPixels.length)];
-    samples.push({
-      x: (p.x / canvasW - 0.5) * 2,
-      y: -(p.y / canvasH - 0.5) * 2,
-      z: (Math.random() - 0.5) * 0.25,
-    });
-  }
-  return samples;
+  return s;
 }
 
-const loveTargets = sampleTextPositions('爱你', 160, 900, 220, CONFIG.particleCount);
-const foreverTargets = sampleTextPositions('永远爱你', 110, 1000, 220, CONFIG.particleCount);
+// --- 文字采样 ---
+function sampleText(text,fontSize,cw,ch,count) {
+  const c=document.createElement('canvas'); c.width=cw; c.height=ch;
+  const ctx=c.getContext('2d');
+  ctx.fillStyle='#ffffff';
+  ctx.font=`bold ${fontSize}px "Microsoft YaHei","PingFang SC","SimHei",sans-serif`;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(text,cw/2,ch/2);
+  return samplePixels(c,count);
+}
 
-// ---- 羽毛球形状 ----
+// --- 羽毛球（按实物比例：球头1/4，羽毛裙3/4，底部宽度≈3×球头宽）---
 function drawShuttlecock(canvas) {
-  const ctx = canvas.getContext('2d');
-  const w = canvas.width, h = canvas.height;
-  const cx = w / 2;
+  const ctx=canvas.getContext('2d'), w=canvas.width, h=canvas.height, cx=w/2;
+  ctx.fillStyle='#ffffff';
 
-  ctx.fillStyle = '#ffffff';
-  // 球头（半圆）
+  // 球头 — 半球（实际是软木半球体）
+  const corkR=40, corkTop=52;
+  ctx.beginPath(); ctx.arc(cx,corkTop+corkR,corkR,Math.PI,0); ctx.fill();
+  // 球头底部横带
+  ctx.fillRect(cx-corkR,corkTop+corkR-4,corkR*2,14);
+
+  // 羽毛裙身 — 梯形，从球头底部到接近画布底部
+  const skirtTop=corkTop+corkR+10, skirtBottom=h-24;
+  const topHalf=corkR, bottomHalf=98;
   ctx.beginPath();
-  ctx.arc(cx, 60, 42, Math.PI, 0);
-  ctx.fill();
-  // 球头底部横条
-  ctx.fillRect(cx - 42, 58, 84, 12);
-
-  // 羽毛裙身（梯形）
-  ctx.beginPath();
-  ctx.moveTo(cx - 42, 70);
-  ctx.lineTo(cx - 80, h - 20);
-  ctx.lineTo(cx + 80, h - 20);
-  ctx.lineTo(cx + 42, 70);
+  ctx.moveTo(cx-topHalf,skirtTop);
+  ctx.lineTo(cx-bottomHalf,skirtBottom);
+  ctx.lineTo(cx+bottomHalf,skirtBottom);
+  ctx.lineTo(cx+topHalf,skirtTop);
   ctx.fill();
 
-  // 羽毛纹理线
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 3;
-  for (let i = -2; i <= 2; i++) {
-    ctx.beginPath();
-    ctx.moveTo(cx + i * 12, 78);
-    ctx.lineTo(cx + i * 28, h - 28);
-    ctx.stroke();
+  // 羽毛纹理 — 中央粗线 + 两侧细线
+  ctx.strokeStyle='#ffffff';
+  ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(cx,skirtTop+4); ctx.lineTo(cx,skirtBottom-4); ctx.stroke();
+  ctx.lineWidth=2.5;
+  for (let i=1;i<=3;i++) {
+    const off=i*18;
+    ctx.beginPath(); ctx.moveTo(cx-off*0.6,skirtTop+8); ctx.lineTo(cx-off,skirtBottom-6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx+off*0.6,skirtTop+8); ctx.lineTo(cx+off,skirtBottom-6); ctx.stroke();
   }
   // 横纹
-  ctx.lineWidth = 2;
-  for (let j = 0; j < 3; j++) {
-    const y = 110 + j * 45;
-    ctx.beginPath();
-    ctx.moveTo(cx - 60 + j * 5, y);
-    ctx.lineTo(cx + 60 - j * 5, y);
-    ctx.stroke();
+  ctx.lineWidth=1.5;
+  for (let j=0;j<4;j++) {
+    const y=skirtTop+20+j*42;
+    const halfW=topHalf+(bottomHalf-topHalf)*((y-skirtTop)/(skirtBottom-skirtTop));
+    ctx.beginPath(); ctx.moveTo(cx-halfW+8,y); ctx.lineTo(cx+halfW-8,y); ctx.stroke();
   }
 }
 
-// ---- 尤尼克斯羽毛球拍形状 ----
+// --- 尤尼克斯羽毛球拍（椭圆拍头+网线+细杆+缠带手柄）---
 function drawRacket(canvas) {
-  const ctx = canvas.getContext('2d');
-  const w = canvas.width, h = canvas.height;
-  const cx = w / 2;
+  const ctx=canvas.getContext('2d'), w=canvas.width, h=canvas.height, cx=w/2;
 
-  ctx.fillStyle = '#ffffff';
-  ctx.strokeStyle = '#ffffff';
+  // 拍头椭圆 — 实际拍头是椭圆形，高>宽
+  const headCx=cx, headCy=125, headRx=82, headRy=112;
+  ctx.fillStyle='#ffffff'; ctx.strokeStyle='#ffffff';
 
-  // 拍头椭圆
-  ctx.lineWidth = 10;
-  ctx.beginPath();
-  ctx.ellipse(cx, 130, 85, 110, 0, 0, Math.PI * 2);
-  ctx.stroke();
+  // 拍框（粗线）
+  ctx.lineWidth=12;
+  ctx.beginPath(); ctx.ellipse(headCx,headCy,headRx,headRy,0,0,Math.PI*2); ctx.stroke();
 
-  // 拍头填充（网格感）
-  ctx.lineWidth = 1;
-  for (let i = -3; i <= 3; i++) {
+  // 内框
+  ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.ellipse(headCx,headCy,headRx-8,headRy-8,0,0,Math.PI*2); ctx.stroke();
+
+  // 竖线
+  for (let i=-6;i<=6;i++) {
     ctx.beginPath();
-    ctx.moveTo(cx + i * 20, 40);
-    ctx.lineTo(cx + i * 15, 220);
-    ctx.stroke();
+    const x=headCx+i*(headRx-10)/6;
+    const yRange=Math.sqrt(1-Math.pow((x-headCx)/headRx,2))*headRy;
+    ctx.moveTo(x,headCy-yRange+8); ctx.lineTo(x,headCy+yRange-8); ctx.stroke();
   }
-  for (let j = -2; j <= 2; j++) {
+  // 横线
+  for (let j=-5;j<=5;j++) {
     ctx.beginPath();
-    ctx.moveTo(cx - 70, 130 + j * 35);
-    ctx.lineTo(cx + 70, 130 + j * 30);
-    ctx.stroke();
+    const y=headCy+j*(headRy-10)/5;
+    const xRange=Math.sqrt(1-Math.pow((y-headCy)/headRy,2))*headRx;
+    ctx.moveTo(headCx-xRange+8,y); ctx.lineTo(headCx+xRange-8,y); ctx.stroke();
   }
 
-  // 拍杆
-  ctx.lineWidth = 8;
-  ctx.beginPath();
-  ctx.moveTo(cx, 235);
-  ctx.lineTo(cx, 340);
-  ctx.stroke();
+  // 拍杆 — 细长直线
+  ctx.lineWidth=9;
+  ctx.beginPath(); ctx.moveTo(cx,headCy+headRy+4); ctx.lineTo(cx,355); ctx.stroke();
 
-  // 拍柄
-  ctx.fillRect(cx - 18, 340, 36, 90);
-  // 柄部纹路
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 2;
-  for (let k = 0; k < 4; k++) {
-    ctx.beginPath();
-    ctx.moveTo(cx - 18, 355 + k * 20);
-    ctx.lineTo(cx + 18, 355 + k * 20);
-    ctx.stroke();
+  // T型接头
+  ctx.fillRect(cx-16,headCy+headRy-4,32,22);
+
+  // 拍柄 — 较宽
+  const handleTop=355, handleH=108;
+  ctx.fillRect(cx-22,handleTop,44,handleH);
+
+  // 柄部缠带纹
+  ctx.strokeStyle='#ffffff'; ctx.lineWidth=1.8;
+  for (let k=0;k<7;k++) {
+    const y=handleTop+8+k*15;
+    ctx.beginPath(); ctx.moveTo(cx-20,y); ctx.lineTo(cx+20,y+2); ctx.stroke();
   }
+  // 柄底盖
+  ctx.fillRect(cx-26,handleTop+handleH-4,52,10);
 }
 
-// ---- 情侣拥抱形状 ----
+// --- 情侣拥抱（双人面对面、环抱、中间爱心）---
 function drawHuggingCouple(canvas) {
-  const ctx = canvas.getContext('2d');
-  const w = canvas.width, h = canvas.height;
-  const cx = w / 2;
+  const ctx=canvas.getContext('2d'), w=canvas.width, h=canvas.height, cx=w/2;
+  ctx.fillStyle='#ffffff'; ctx.strokeStyle='#ffffff';
 
-  ctx.fillStyle = '#ffffff';
-
-  // 左人头
-  ctx.beginPath();
-  ctx.arc(cx - 55, 60, 32, 0, Math.PI * 2);
-  ctx.fill();
-  // 右人头（略高）
-  ctx.beginPath();
-  ctx.arc(cx + 50, 50, 30, 0, Math.PI * 2);
-  ctx.fill();
+  // 女性（左）头部略小略高
+  ctx.beginPath(); ctx.arc(cx-60,58,30,0,Math.PI*2); ctx.fill();
+  // 男性（右）头部略大略低
+  ctx.beginPath(); ctx.arc(cx+58,64,32,0,Math.PI*2); ctx.fill();
 
   // 中间爱心
   ctx.beginPath();
-  const hx = cx, hy = 85;
-  ctx.moveTo(hx, hy + 18);
-  ctx.bezierCurveTo(hx - 24, hy - 5, hx - 12, hy - 28, hx, hy - 8);
-  ctx.bezierCurveTo(hx + 12, hy - 28, hx + 24, hy - 5, hx, hy + 18);
+  const hx=cx, hy=82;
+  ctx.moveTo(hx,hy+20);
+  ctx.bezierCurveTo(hx-28,hy-6,hx-14,hy-32,hx,hy-10);
+  ctx.bezierCurveTo(hx+14,hy-32,hx+28,hy-6,hx,hy+20);
   ctx.fill();
 
-  // 左身体
+  // 女性身体 — 从左到中间
   ctx.beginPath();
-  ctx.moveTo(cx - 80, 95);
-  ctx.quadraticCurveTo(cx - 40, 170, cx - 10, h - 15);
-  ctx.lineTo(cx - 55, h - 15);
-  ctx.quadraticCurveTo(cx - 80, 170, cx - 95, 95);
+  ctx.moveTo(cx-88,95);
+  ctx.bezierCurveTo(cx-70,150,cx-40,200,cx-15,h-18);
+  ctx.lineTo(cx-50,h-18);
+  ctx.bezierCurveTo(cx-75,210,cx-95,160,cx-100,95);
   ctx.fill();
 
-  // 右身体
+  // 男性身体 — 从右到中间
   ctx.beginPath();
-  ctx.moveTo(cx + 75, 90);
-  ctx.quadraticCurveTo(cx + 35, 165, cx + 8, h - 10);
-  ctx.lineTo(cx + 60, h - 10);
-  ctx.quadraticCurveTo(cx + 85, 165, cx + 95, 90);
+  ctx.moveTo(cx+82,94);
+  ctx.bezierCurveTo(cx+65,148,cx+35,198,cx+12,h-14);
+  ctx.lineTo(cx+52,h-14);
+  ctx.bezierCurveTo(cx+78,208,cx+98,158,cx+102,94);
   ctx.fill();
 
-  // 环抱手臂（弧形连接两人）
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 14;
+  // 女性手臂环抱男性
+  ctx.lineWidth=20; ctx.lineCap='round';
   ctx.beginPath();
-  ctx.arc(cx, 125, 55, 0.15 * Math.PI, 0.85 * Math.PI);
+  ctx.arc(cx-8,130,72,0.25*Math.PI,1.0*Math.PI);
   ctx.stroke();
-  ctx.lineWidth = 14;
+  // 男性手臂环抱女性
   ctx.beginPath();
-  ctx.arc(cx, 125, 50, -0.85 * Math.PI, -0.15 * Math.PI);
+  ctx.arc(cx+8,128,70,-0.85*Math.PI,-0.05*Math.PI);
   ctx.stroke();
+
+  // 裙摆（女性下方）
+  ctx.lineWidth=1; ctx.fillStyle='#ffffff';
+  ctx.beginPath();
+  ctx.moveTo(cx-50,h-18);
+  ctx.lineTo(cx-72,h-6);
+  ctx.lineTo(cx-45,h-6);
+  ctx.fill();
 }
 
-// 通用形状采样函数
-function sampleShape(drawFn, canvasW, canvasH, count) {
-  const canvas = document.createElement('canvas');
-  canvas.width = canvasW;
-  canvas.height = canvasH;
-  drawFn(canvas);
+// 生成所有采样
+const loveTargets = sampleText('爱你', 160, 900, 220, N);
+const foreverTargets = sampleText('永远爱你', 110, 1000, 220, N);
 
-  const ctx = canvas.getContext('2d');
-  const imageData = ctx.getImageData(0, 0, canvasW, canvasH);
-  const data = imageData.data;
-  const litPixels = [];
-
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] > 60) {
-      litPixels.push({ x: (i / 4) % canvasW, y: Math.floor((i / 4) / canvasW) });
-    }
-  }
-
-  if (litPixels.length < 10) {
-    console.warn('形状采样像素不足');
-    return Array.from({ length: count }, () => ({
-      x: (Math.random() - 0.5) * 2,
-      y: (Math.random() - 0.5) * 2,
-      z: (Math.random() - 0.5) * 0.3,
-    }));
-  }
-
-  const samples = [];
-  for (let i = 0; i < count; i++) {
-    const p = litPixels[Math.floor(Math.random() * litPixels.length)];
-    samples.push({
-      x: (p.x / canvasW - 0.5) * 2,
-      y: -(p.y / canvasH - 0.5) * 2,
-      z: (Math.random() - 0.5) * 0.25,
-    });
-  }
-  return samples;
+function genShapeTargets(drawFn, cw, ch, count) {
+  const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+  drawFn(c);
+  return samplePixels(c, count);
 }
-
-const shuttlecockTargets = sampleShape(drawShuttlecock, 400, 380, CONFIG.particleCount);
-const racketTargets = sampleShape(drawRacket, 360, 460, CONFIG.particleCount);
-const hugTargets = sampleShape(drawHuggingCouple, 440, 380, CONFIG.particleCount);
+const shuttlecockTargets = genShapeTargets(drawShuttlecock, 440, 500, N);
+const racketTargets = genShapeTargets(drawRacket, 380, 520, N);
+const hugTargets = genShapeTargets(drawHuggingCouple, 480, 420, N);
 
 // Fibonacci 球面
 function fibonacciSphere(count) {
-  const points = [];
-  const phi = Math.PI * (3 - Math.sqrt(5));
-  for (let i = 0; i < count; i++) {
-    const y = 1 - (i / (count - 1)) * 2;
-    const r = Math.sqrt(1 - y * y);
-    const theta = phi * i;
-    points.push({ x: Math.cos(theta) * r, y, z: Math.sin(theta) * r });
+  const pts=[], phi=Math.PI*(3-Math.sqrt(5));
+  for (let i=0;i<count;i++) {
+    const y=1-(i/(count-1))*2, r=Math.sqrt(1-y*y), theta=phi*i;
+    pts.push({x:Math.cos(theta)*r, y, z:Math.sin(theta)*r});
   }
-  return points;
+  return pts;
 }
-const sphereBase = fibonacciSphere(CONFIG.particleCount);
+const sphereBase=fibonacciSphere(N);
 
-// 每颗粒子独立的过渡速度 + 个性参数
-const particleSpeeds = new Float32Array(CONFIG.particleCount);
-const particlePhases = new Float32Array(CONFIG.particleCount);
-const sparkleTimers = new Float32Array(CONFIG.particleCount);
-for (let i = 0; i < CONFIG.particleCount; i++) {
-  particleSpeeds[i] = CONFIG.transitionSpeed * (0.4 + Math.random() * 1.2);
-  particlePhases[i] = Math.random() * Math.PI * 2;
-  sparkleTimers[i] = Math.random() * 100;
+const particleSpeeds=new Float32Array(N);
+const particlePhases=new Float32Array(N);
+const sparkleTimers=new Float32Array(N);
+for (let i=0;i<N;i++) {
+  particleSpeeds[i]=CONFIG.transitionSpeed*(0.4+Math.random()*1.2);
+  particlePhases[i]=Math.random()*Math.PI*2;
+  sparkleTimers[i]=Math.random()*100;
 }
 
-// ================================================================
-// 4. 手势平滑系统 + 手部位置追踪
-// ================================================================
-let rawGesture = 0;
-let rawOpenness = 0.5;
-let handDetected = false;
-let useCamera = false;
+// ═══════════════════ 手势系统 ═══════════════════
+let smoothGesture=0, smoothOpenness=0.5, handDetected=false, useCamera=false;
+let handCenterX=0.5, handCenterY=0.5;
+let smoothHandX=0.5, smoothHandY=0.5, smoothHandZ=0;
+const gestureVotes=[0,0,0,0,0,0];
+const VOTE_DECAY=0.75, VOTE_THRESHOLD=2.5;
+let smoothedLandmarks=null;
 
-let smoothGesture = 0;
-let smoothOpenness = 0.5;
-
-// 手部中心位置（归一化坐标 0-1，平滑后）
-let handCenterX = 0.5;
-let handCenterY = 0.5;
-let smoothHandX = 0.5;
-let smoothHandY = 0.5;
-let smoothHandZ = 0;
-
-const gestureVotes = [0, 0, 0, 0, 0, 0];
-const GESTURE_VOTE_DECAY = 0.75;
-const GESTURE_SWITCH_THRESHOLD = 2.5;
-
-let smoothedLandmarks = null;
-
-function smoothLandmarks(rawLandmarks) {
-  if (!smoothedLandmarks || smoothedLandmarks.length !== rawLandmarks.length) {
-    smoothedLandmarks = rawLandmarks.map(l => ({ ...l }));
-    return smoothedLandmarks;
-  }
-  const a = CONFIG.landmarkSmoothing;
-  for (let i = 0; i < rawLandmarks.length; i++) {
-    smoothedLandmarks[i].x += (rawLandmarks[i].x - smoothedLandmarks[i].x) * a;
-    smoothedLandmarks[i].y += (rawLandmarks[i].y - smoothedLandmarks[i].y) * a;
-    smoothedLandmarks[i].z += (rawLandmarks[i].z - smoothedLandmarks[i].z) * a;
-  }
+function smoothLandmarks(raw) {
+  if (!smoothedLandmarks||smoothedLandmarks.length!==raw.length) {smoothedLandmarks=raw.map(l=>({...l})); return smoothedLandmarks;}
+  const a=CONFIG.landmarkSmoothing;
+  for (let i=0;i<raw.length;i++) {smoothedLandmarks[i].x+=(raw[i].x-smoothedLandmarks[i].x)*a; smoothedLandmarks[i].y+=(raw[i].y-smoothedLandmarks[i].y)*a; smoothedLandmarks[i].z+=(raw[i].z-smoothedLandmarks[i].z)*a;}
   return smoothedLandmarks;
 }
 
-function detectGesture(landmarks) {
-  const fingers = [
-    { tip: 8, pip: 6 },
-    { tip: 12, pip: 10 },
-    { tip: 16, pip: 14 },
-    { tip: 20, pip: 18 },
-  ];
-  const extended = fingers.map(f => landmarks[f.tip].y < landmarks[f.pip].y - 0.015);
-
-  const count = extended.filter(Boolean).length;
-
-  // 拇指检测：拇指尖 x 明显偏离食指根部（selfieMode 下镜像坐标）
-  const thumbTip = landmarks[4];
-  const thumbIp = landmarks[3];
-  const thumbExtended = thumbTip.x < thumbIp.x - 0.02;
-
-  if (count === 1 && extended[0]) return 1;
-  if (count === 2 && extended[0] && extended[1]) return 2;
-  if (count === 3 && extended[0] && extended[1] && extended[2]) return 3;
-  if (count === 4 && extended[0] && extended[1] && extended[2] && extended[3]) {
-    return thumbExtended ? 5 : 4;
-  }
+function detectGesture(lm) {
+  const fingers=[{t:8,p:6},{t:12,p:10},{t:16,p:14},{t:20,p:18}];
+  const ext=fingers.map(f=>lm[f.t].y<lm[f.p].y-0.015);
+  const cnt=ext.filter(Boolean).length;
+  const thumbExt=lm[4].x<lm[3].x-0.02;
+  if (cnt===1&&ext[0]) return 1;
+  if (cnt===2&&ext[0]&&ext[1]) return 2;
+  if (cnt===3&&ext[0]&&ext[1]&&ext[2]) return 3;
+  if (cnt===4&&ext[0]&&ext[1]&&ext[2]&&ext[3]) return thumbExt?5:4;
   return 0;
 }
 
-function calcOpenness(landmarks) {
-  const thumb = landmarks[4];
-  const pinky = landmarks[20];
-  const dist = Math.hypot(thumb.x - pinky.x, thumb.y - pinky.y, thumb.z - pinky.z);
-  return Math.max(0, Math.min(1, (dist - 0.08) / 0.32));
+function calcOpenness(lm) {
+  return Math.max(0,Math.min(1,(Math.hypot(lm[4].x-lm[20].x,lm[4].y-lm[20].y,lm[4].z-lm[20].z)-0.08)/0.32));
 }
 
 function updateGestureVote(raw) {
-  for (let i = 0; i < 6; i++) gestureVotes[i] *= GESTURE_VOTE_DECAY;
-  gestureVotes[raw] += 1.2;
-
-  const maxVote = Math.max(...gestureVotes);
-  const maxGesture = gestureVotes.indexOf(maxVote);
-
-  if (maxGesture !== smoothGesture && maxVote >= GESTURE_SWITCH_THRESHOLD) {
-    smoothGesture = maxGesture;
-    for (let i = 0; i < 6; i++) gestureVotes[i] = 0;
-    gestureVotes[maxGesture] = GESTURE_SWITCH_THRESHOLD;
-  }
-
-  if (smoothGesture > 0 && gestureVotes[smoothGesture] < 1.0 && maxVote < 1.5) {
-    smoothGesture = 0;
-    for (let i = 0; i < 6; i++) gestureVotes[i] = 0;
-  }
+  for (let i=0;i<6;i++) gestureVotes[i]*=VOTE_DECAY;
+  gestureVotes[raw]+=1.2;
+  const mx=Math.max(...gestureVotes), mg=gestureVotes.indexOf(mx);
+  if (mg!==smoothGesture&&mx>=VOTE_THRESHOLD) {smoothGesture=mg; for(let i=0;i<6;i++)gestureVotes[i]=0; gestureVotes[mg]=VOTE_THRESHOLD;}
+  if (smoothGesture>0&&gestureVotes[smoothGesture]<1.0&&mx<1.5) {smoothGesture=0; for(let i=0;i<6;i++)gestureVotes[i]=0;}
 }
 
 function onHandResults(results) {
-  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-    handDetected = true;
-    const raw = results.multiHandLandmarks[0];
-    const smoothed = smoothLandmarks(raw);
-
-    rawGesture = detectGesture(smoothed);
-    rawOpenness = calcOpenness(smoothed);
-
-    updateGestureVote(rawGesture);
-    smoothOpenness += (rawOpenness - smoothOpenness) * CONFIG.opennessSmoothing;
-
-    // 手部中心追踪（使用手腕 landmark 0 + 中指根部 landmark 9 的平均）
-    handCenterX = (smoothed[0].x + smoothed[9].x) / 2;
-    handCenterY = (smoothed[0].y + smoothed[9].y) / 2;
-    // Z 深度（拇指与食指指尖中点近似）
-    const handZ = (smoothed[4].z + smoothed[8].z) / 2;
-    smoothHandZ += (handZ - smoothHandZ) * 0.3;
+  if (results.multiHandLandmarks&&results.multiHandLandmarks.length>0) {
+    handDetected=true;
+    const lm=smoothLandmarks(results.multiHandLandmarks[0]);
+    updateGestureVote(detectGesture(lm));
+    smoothOpenness+=(calcOpenness(lm)-smoothOpenness)*CONFIG.opennessSmoothing;
+    handCenterX=(lm[0].x+lm[9].x)/2; handCenterY=(lm[0].y+lm[9].y)/2;
+    smoothHandZ+=(((lm[4].z+lm[8].z)/2)-smoothHandZ)*0.3;
   } else {
-    handDetected = false;
+    handDetected=false;
     if (!useCamera) return;
-    smoothOpenness += (0.5 - smoothOpenness) * 0.05;
-    for (let i = 0; i < 6; i++) gestureVotes[i] *= 0.8;
-    if (Math.max(...gestureVotes) < 1.5) smoothGesture = 0;
-    // 手离开时缓慢回到中心
-    handCenterX = 0.5;
-    handCenterY = 0.5;
+    smoothOpenness+=(0.5-smoothOpenness)*0.05;
+    for (let i=0;i<6;i++) gestureVotes[i]*=0.8;
+    if (Math.max(...gestureVotes)<1.5) smoothGesture=0;
+    handCenterX=0.5; handCenterY=0.5;
   }
-
-  // 平滑手部位置
-  const f = CONFIG.handFollowSpeed;
-  smoothHandX += (handCenterX - smoothHandX) * f;
-  smoothHandY += (handCenterY - smoothHandY) * f;
+  const f=CONFIG.handFollowSpeed;
+  smoothHandX+=(handCenterX-smoothHandX)*f;
+  smoothHandY+=(handCenterY-smoothHandY)*f;
 }
 
-// ================================================================
-// 5. MediaPipe 初始化
-// ================================================================
-let handsInstance = null;
-let cameraStream = null;
-let animFrameId = null;
+// ═══════════════════ 动画 ═══════════════════
+function computeTargets(gesture,openness,time) {
+  const targets=new Float32Array(N*3);
+  const hx=(smoothHandX-0.5)*6.0, hy=(smoothHandY-0.5)*4.0;
+  const df=1+smoothHandZ*0.5;
 
-function stopCamera() {
-  if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
-  if (cameraStream) {
-    cameraStream.getTracks().forEach(t => t.stop());
-    cameraStream = null;
-  }
-}
+  let src;
+  if (gesture===1) src=loveTargets;
+  else if (gesture===2) src=foreverTargets;
+  else if (gesture===3) src=shuttlecockTargets;
+  else if (gesture===4) src=racketTargets;
+  else if (gesture===5) src=hugTargets;
+  else src=null;
 
-async function initMediaPipe() {
-  const loadingText = document.getElementById('loading-text');
-  const loadingSub = document.getElementById('loading-sub');
-  const progressBar = document.getElementById('loading-progress');
-
-  if (typeof Hands === 'undefined') {
-    loadingText.textContent = '手势库未加载，使用键盘模式';
-    loadingSub.textContent = '按 0-5 切换形态，滑动鼠标控制张合';
-    progressBar.style.width = '100%';
-    return false;
-  }
-
-  loadingText.textContent = '加载手势识别模型中…';
-  loadingSub.textContent = '模型约 18MB，首次加载需耐心等待';
-
-  // 进度条动画
-  let progress = 0;
-  const progressTimer = setInterval(() => {
-    progress += Math.random() * 6;
-    if (progress > 85) progress = 85;
-    progressBar.style.width = progress + '%';
-  }, 500);
-
-  const hands = new Hands({
-    locateFile: (file) => `models/${file}`,
-  });
-  hands.setOptions({
-    maxNumHands: 1,
-    modelComplexity: 1,
-    minDetectionConfidence: 0.65,
-    minTrackingConfidence: 0.4,
-    selfieMode: true,
-  });
-  hands.onResults(onHandResults);
-  handsInstance = hands;
-
-  const video = document.getElementById('input-video');
-
-  try {
-    // 1. 获取摄像头
-    loadingSub.textContent = '正在请求摄像头权限…';
-    let stream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480, facingMode: 'user' },
-      });
-    } catch (camErr) {
-      console.warn('摄像头不可用:', camErr.message);
-      goKeyboard('摄像头不可用，使用键盘模式');
-      return false;
-    }
-
-    cameraStream = stream;
-    video.srcObject = stream;
-    await video.play();
-
-    // 预览小窗
-    const preview = document.createElement('video');
-    preview.id = 'video-preview';
-    preview.srcObject = stream;
-    preview.autoplay = true;
-    preview.playsInline = true;
-    preview.muted = true;
-    document.body.appendChild(preview);
-
-    // 2. 开始帧循环（第一次 send 会触发模型自动加载）
-    loadingSub.textContent = '正在加载模型并启动手势识别…';
-    let modelLoaded = false;
-    let loadTimedOut = false;
-
-    // 超时检测
-    const loadTimeout = setTimeout(() => {
-      if (!modelLoaded) {
-        loadTimedOut = true;
-        goKeyboard('模型加载超时，使用键盘模式');
-      }
-    }, CONFIG.modelLoadTimeout * 1000);
-
-    function processFrame() {
-      if (!cameraStream || loadTimedOut) return;
-      hands.send({ image: video })
-        .then(() => {
-          if (!modelLoaded) {
-            modelLoaded = true;
-            clearTimeout(loadTimeout);
-            clearInterval(progressTimer);
-            progressBar.style.width = '100%';
-          }
-          if (cameraStream) animFrameId = requestAnimationFrame(processFrame);
-        })
-        .catch(() => {
-          if (cameraStream) animFrameId = requestAnimationFrame(processFrame);
-        });
-    }
-    animFrameId = requestAnimationFrame(processFrame);
-
-    // 等一小段时间确认模型开始加载
-    await new Promise(r => setTimeout(r, 1500));
-    if (!modelLoaded && !loadTimedOut) {
-      // 还在加载中，继续等待（由 loadTimeout 兜底）
-    }
-    return !loadTimedOut;
-
-  } catch (e) {
-    console.warn('手势初始化失败:', e.message);
-    stopCamera();
-    goKeyboard('手势初始化失败，使用键盘模式');
-    return false;
-  }
-
-  function goKeyboard(msg) {
-    clearInterval(progressTimer);
-    progressBar.style.width = '100%';
-    loadingText.textContent = msg;
-    loadingSub.textContent = '按 0-5 切换形态，滑动鼠标控制张合';
-  }
-}
-
-// ================================================================
-// 6. 后备控制
-// ================================================================
-function setupFallback() {
-  document.addEventListener('keydown', (e) => {
-    if (e.key === '0') { smoothGesture = 0; for (let i = 0; i < 6; i++) gestureVotes[i] = 0; }
-    if (e.key === '1') { smoothGesture = 1; for (let i = 0; i < 6; i++) gestureVotes[i] = 0; gestureVotes[1] = 10; }
-    if (e.key === '2') { smoothGesture = 2; for (let i = 0; i < 6; i++) gestureVotes[i] = 0; gestureVotes[2] = 10; }
-    if (e.key === '3') { smoothGesture = 3; for (let i = 0; i < 6; i++) gestureVotes[i] = 0; gestureVotes[3] = 10; }
-    if (e.key === '4') { smoothGesture = 4; for (let i = 0; i < 6; i++) gestureVotes[i] = 0; gestureVotes[4] = 10; }
-    if (e.key === '5') { smoothGesture = 5; for (let i = 0; i < 6; i++) gestureVotes[i] = 0; gestureVotes[5] = 10; }
-  });
-
-  document.addEventListener('mousemove', (e) => {
-    const target = 1 - e.clientY / window.innerHeight;
-    smoothOpenness += (Math.max(0, Math.min(1, target)) - smoothOpenness) * 0.3;
-    // 键盘模式下鼠标也控制文字偏移
-    smoothHandX += ((e.clientX / window.innerWidth) - smoothHandX) * 0.1;
-    smoothHandY += ((1 - e.clientY / window.innerHeight) - smoothHandY) * 0.1;
-  });
-
-  document.addEventListener('touchmove', (e) => {
-    const target = 1 - e.touches[0].clientY / window.innerHeight;
-    smoothOpenness += (Math.max(0, Math.min(1, target)) - smoothOpenness) * 0.3;
-  }, { passive: true });
-
-  document.getElementById('hint').style.opacity = '1';
-}
-
-// ================================================================
-// 7. 动态颜色 & 灯光计算（炫彩增强版）
-// ================================================================
-function updateParticleColors(gesture, openness, time) {
-  const col = geometry.attributes.color.array;
-  const G = gesture;
-
-  for (let i = 0; i < CONFIG.particleCount; i++) {
-    const i3 = i * 3;
-    const phase = particlePhases[i];
-
-    // 基础颜色不变，仅随张合度和呼吸脉冲调整亮度
-    const baseR = baseColors[i3];
-    const baseG = baseColors[i3 + 1];
-    const baseB = baseColors[i3 + 2];
-
-    if (G > 0) {
-      const pulse = 0.75 + 0.25 * Math.sin(time * CONFIG.colorPulseSpeed + phase);
-      const intensity = pulse * (0.75 + openness * 0.5);
-      col[i3]     = Math.min(1, baseR * intensity * 1.3);
-      col[i3 + 1] = Math.min(1, baseG * intensity * 0.9);
-      col[i3 + 2] = Math.min(1, baseB * intensity * 0.8);
-    } else {
-      const pulse = 0.9 + 0.1 * Math.sin(time * 1.5 + phase);
-      const intensity = (0.35 + openness * 0.7) * pulse;
-      col[i3]     = baseR * intensity;
-      col[i3 + 1] = baseG * intensity;
-      col[i3 + 2] = baseB * intensity;
-    }
-
-    // 偶尔闪烁
-    sparkleTimers[i] += 0.05;
-    if (Math.sin(sparkleTimers[i] * 3 + phase) > 0.92 && Math.random() > 0.7) {
-      col[i3]     = Math.min(1, col[i3] * 2.2);
-      col[i3 + 1] = Math.min(1, col[i3 + 1] * 2.2);
-      col[i3 + 2] = Math.min(1, col[i3 + 2] * 2.2);
-    }
-  }
-  geometry.attributes.color.needsUpdate = true;
-
-  const targetOpacity = G > 0 ? 0.95 : 0.6 + openness * 0.3;
-  material.opacity += (targetOpacity - material.opacity) * 3 * 0.016;
-}
-
-function updateStarColors(gesture, openness, time) {
-  const col = starsGeo.attributes.color.array;
-  for (let i = 0; i < starsCount; i++) {
-    const i3 = i * 3;
-    const flicker = 0.7 + 0.3 * Math.sin(time * 3 + i * 1.7);
-    let intensity;
-    if (gesture > 0) {
-      intensity = (0.6 + openness * 0.5) * flicker;
-      col[i3] = starsBaseCol[i3] * intensity * 1.4;
-      col[i3 + 1] = starsBaseCol[i3 + 1] * intensity * 1.0;
-      col[i3 + 2] = starsBaseCol[i3 + 2] * intensity * 0.7;
-    } else {
-      intensity = (0.4 + openness * 0.6) * flicker;
-      col[i3] = starsBaseCol[i3] * intensity;
-      col[i3 + 1] = starsBaseCol[i3 + 1] * intensity;
-      col[i3 + 2] = starsBaseCol[i3 + 2] * intensity;
-    }
-  }
-  starsGeo.attributes.color.needsUpdate = true;
-}
-
-function updateAura(gesture, openness, time) {
-  if (gesture > 0) {
-    auraMat.opacity += (0.45 - auraMat.opacity) * 2 * 0.016;
-  } else {
-    auraMat.opacity += (0.15 + openness * 0.15 - auraMat.opacity) * 2 * 0.016;
-  }
-  aura.rotation.y += 0.003;
-  aura.rotation.x += 0.002;
-
-  // 环境光保持固定粉蓝调，随呼吸脉动
-  const aCol = auraGeo.attributes.color.array;
-  for (let i = 0; i < auraCount; i++) {
-    const i3 = i * 3;
-    const pulse = 0.85 + 0.15 * Math.sin(time * 1.8 + i * 0.7);
-    const intensity = pulse * (0.5 + openness * 0.5);
-    aCol[i3] = Math.min(1, baseAuraColors[i3] * intensity * (gesture > 0 ? 1.4 : 1));
-    aCol[i3 + 1] = Math.min(1, baseAuraColors[i3 + 1] * intensity * (gesture > 0 ? 1.1 : 1));
-    aCol[i3 + 2] = Math.min(1, baseAuraColors[i3 + 2] * intensity * 1.0);
-  }
-  auraGeo.attributes.color.needsUpdate = true;
-}
-
-// ================================================================
-// 8. 计算目标位置（文字面向摄像头 + 跟随手部运动）
-// ================================================================
-function computeTargets(gesture, openness, time) {
-  const targets = new Float32Array(CONFIG.particleCount * 3);
-
-  // 手部位置映射到世界空间偏移（X: ±3, Y: ±2）
-  const handOffsetX = (smoothHandX - 0.5) * 6.0;
-  const handOffsetY = (smoothHandY - 0.5) * 4.0;
-  // 深度影响扩散
-  const depthFactor = 1 + smoothHandZ * 0.5;
-
-  if (gesture >= 1 && gesture <= 5) {
-    // 统一处理所有形状形态（文字 + 羽毛球 + 球拍 + 拥抱）
-    let sourceTargets;
-    if (gesture === 1) sourceTargets = loveTargets;
-    else if (gesture === 2) sourceTargets = foreverTargets;
-    else if (gesture === 3) sourceTargets = shuttlecockTargets;
-    else if (gesture === 4) sourceTargets = racketTargets;
-    else sourceTargets = hugTargets; // gesture === 5
-
-    const spread = (0.65 + openness * 1.4) * depthFactor;
-    for (let i = 0; i < CONFIG.particleCount; i++) {
-      const t = sourceTargets[i];
-      const wave = Math.sin(time * 1.8 + particlePhases[i]) * 0.025 * openness;
-      targets[i * 3]     = t.x * CONFIG.textWidth * spread + handOffsetX + wave;
-      targets[i * 3 + 1] = t.y * CONFIG.textHeight * spread + handOffsetY + wave * 0.7;
-      targets[i * 3 + 2] = t.z * spread * 2 + smoothHandZ * 1.5;
+  if (src) {
+    const spread=(0.65+openness*1.4)*df;
+    for (let i=0;i<N;i++) {
+      const t=src[i];
+      const w=Math.sin(time*1.8+particlePhases[i])*0.025*openness;
+      targets[i*3]=t.x*CONFIG.shapeScale*spread+hx+w;
+      targets[i*3+1]=t.y*CONFIG.shapeScale*spread+hy+w*0.7;
+      targets[i*3+2]=t.z*spread*2+smoothHandZ*1.5;
     }
   } else {
-    const radius = 1.2 + openness * 4.0;
-    for (let i = 0; i < CONFIG.particleCount; i++) {
-      const s = sphereBase[i];
-      const drift = Math.sin(time * 1.3 + i * 0.03) * 0.15 * openness;
-      const drift2 = Math.cos(time * 1.7 + i * 0.05) * 0.12 * openness;
-      targets[i * 3]     = s.x * radius + drift;
-      targets[i * 3 + 1] = s.y * radius + drift2;
-      targets[i * 3 + 2] = s.z * radius + drift * 0.6;
+    const radius=1.2+openness*4.0;
+    for (let i=0;i<N;i++) {
+      const s=sphereBase[i];
+      const d1=Math.sin(time*1.3+i*0.03)*0.15*openness;
+      const d2=Math.cos(time*1.7+i*0.05)*0.12*openness;
+      targets[i*3]=s.x*radius+d1;
+      targets[i*3+1]=s.y*radius+d2;
+      targets[i*3+2]=s.z*radius+d1*0.6;
     }
   }
-
   return targets;
 }
 
-// ================================================================
-// 9. 动画循环
-// ================================================================
-const gestureLabel = document.getElementById('gesture-label');
-const opennessBar = document.getElementById('openness-bar');
-const hintEl = document.getElementById('hint');
-
-function updateUI(gesture, openness) {
-  const names = { 0: '散布形态', 1: '爱 你', 2: '永 远 爱 你', 3: '羽毛球', 4: '尤尼克斯', 5: '情侣拥抱' };
-  gestureLabel.textContent = names[gesture] || '散布形态';
-  gestureLabel.className = gesture > 0 ? 'active' : '';
-  opennessBar.style.width = (openness * 100) + '%';
+function updateColors(gesture,openness,time) {
+  const col=geometry.attributes.color.array;
+  for (let i=0;i<N;i++) {
+    const i3=i*3, ph=particlePhases[i];
+    const br=baseColors[i3], bg=baseColors[i3+1], bb=baseColors[i3+2];
+    let intensity;
+    if (gesture>0) {
+      const pulse=0.75+0.25*Math.sin(time*CONFIG.colorPulseSpeed+ph);
+      intensity=pulse*(0.75+openness*0.5);
+      col[i3]=Math.min(1,br*intensity*1.3);
+      col[i3+1]=Math.min(1,bg*intensity*0.9);
+      col[i3+2]=Math.min(1,bb*intensity*0.8);
+    } else {
+      const pulse=0.9+0.1*Math.sin(time*1.5+ph);
+      intensity=(0.35+openness*0.7)*pulse;
+      col[i3]=br*intensity; col[i3+1]=bg*intensity; col[i3+2]=bb*intensity;
+    }
+    sparkleTimers[i]+=0.05;
+    if (Math.sin(sparkleTimers[i]*3+ph)>0.92&&Math.random()>0.7) {
+      col[i3]=Math.min(1,col[i3]*2.2); col[i3+1]=Math.min(1,col[i3+1]*2.2); col[i3+2]=Math.min(1,col[i3+2]*2.2);
+    }
+  }
+  geometry.attributes.color.needsUpdate=true;
+  material.opacity+=(gesture>0?0.95:0.6+openness*0.3-material.opacity)*3*0.016;
 }
 
-let lastTime = performance.now();
-let timeAccum = 0;
-let colorUpdateCounter = 0;
+function updateStars(gesture,openness,time) {
+  const col=starsGeo.attributes.color.array;
+  for (let i=0;i<starsCount;i++) {
+    const i3=i*3,fl=0.7+0.3*Math.sin(time*3+i*1.7);
+    const intensity=(gesture>0?(0.6+openness*0.5):(0.4+openness*0.6))*fl;
+    col[i3]=starsBaseCol[i3]*intensity*(gesture>0?1.4:1);
+    col[i3+1]=starsBaseCol[i3+1]*intensity*(gesture>0?1.0:1);
+    col[i3+2]=starsBaseCol[i3+2]*intensity*(gesture>0?0.7:1);
+  }
+  starsGeo.attributes.color.needsUpdate=true;
+}
+
+function updateAura(gesture,openness,time) {
+  auraMat.opacity+=(gesture>0?0.45:0.15+openness*0.15-auraMat.opacity)*2*0.016;
+  aura.rotation.y+=0.003; aura.rotation.x+=0.002;
+  const aCol=auraGeo.attributes.color.array;
+  for (let i=0;i<auraCount;i++) {
+    const i3=i*3, pulse=0.85+0.15*Math.sin(time*1.8+i*0.7);
+    const intensity=pulse*(0.5+openness*0.5);
+    aCol[i3]=Math.min(1,baseAuraColors[i3]*intensity*(gesture>0?1.4:1));
+    aCol[i3+1]=Math.min(1,baseAuraColors[i3+1]*intensity*(gesture>0?1.1:1));
+    aCol[i3+2]=Math.min(1,baseAuraColors[i3+2]*intensity);
+  }
+  auraGeo.attributes.color.needsUpdate=true;
+}
+
+// UI
+const gestureLabel=document.getElementById('gesture-label');
+const shapeHint=document.getElementById('shape-hint');
+const opennessBar=document.getElementById('openness-bar');
+const hintEl=document.getElementById('hint');
+const names={0:'粒子宇宙',1:'爱 你',2:'永 远 爱 你',3:'羽毛球',4:'尤尼克斯球拍',5:'情侣拥抱'};
+const hints={0:'',1:'伸出食指',2:'伸出食指+中指',3:'伸出三指',4:'伸出四指',5:'张开五指'};
+
+function updateUI(gesture,openness) {
+  gestureLabel.textContent=names[gesture]||'粒子宇宙';
+  gestureLabel.className=gesture>0?'active':'';
+  shapeHint.textContent=hints[gesture]||'';
+  if (!useCamera) shapeHint.textContent='';
+  opennessBar.style.width=(openness*100)+'%';
+}
+
+let lastTime=performance.now(), timeAccum=0, colorUpdateCounter=0;
 
 function animate(timestamp) {
   requestAnimationFrame(animate);
+  let dt=(timestamp-lastTime)/1000;
+  if (dt<=0||dt>0.2) dt=0.016;
+  lastTime=timestamp; timeAccum+=dt;
 
-  let dt = (timestamp - lastTime) / 1000;
-  if (dt <= 0 || dt > 0.2) dt = 0.016;
-  lastTime = timestamp;
-  timeAccum += dt;
-
-  const targets = computeTargets(smoothGesture, smoothOpenness, timeAccum);
-
-  const pos = geometry.attributes.position.array;
-  for (let i = 0; i < pos.length; i++) {
-    const pIdx = Math.floor(i / 3);
-    const diff = targets[i] - pos[i];
-    const dist = Math.abs(diff);
-    const springFactor = (particleSpeeds[pIdx] + dist * 6.0) * dt;
-    pos[i] += diff * Math.min(springFactor, 0.7);
+  const targets=computeTargets(smoothGesture,smoothOpenness,timeAccum);
+  const pos=geometry.attributes.position.array;
+  for (let i=0;i<pos.length;i++) {
+    const pIdx=Math.floor(i/3);
+    const diff=targets[i]-pos[i];
+    pos[i]+=diff*Math.min((particleSpeeds[pIdx]+Math.abs(diff)*6.0)*dt,0.7);
   }
-  geometry.attributes.position.needsUpdate = true;
+  geometry.attributes.position.needsUpdate=true;
 
-  // 文字形态：面向摄像头，只做手部微调旋转
-  if (smoothGesture > 0) {
-    // 平滑回到正向（面向摄像头）
-    const targetRotY = (smoothHandX - 0.5) * 1.0;  // 手左右移动微调 Y 旋转
-    const targetRotX = (smoothHandY - 0.5) * 0.6;  // 手上下移动微调 X 旋转
-    particles.rotation.y += (targetRotY - particles.rotation.y) * 0.08;
-    particles.rotation.x += (targetRotX - particles.rotation.x) * 0.08;
-    particles.rotation.z += (0 - particles.rotation.z) * 0.08;
+  // 形态>0：面向摄像头 + 手部微调；形态=0：自由旋转
+  if (smoothGesture>0) {
+    const trY=(smoothHandX-0.5)*1.0, trX=(smoothHandY-0.5)*0.6;
+    particles.rotation.y+=(trY-particles.rotation.y)*0.08;
+    particles.rotation.x+=(trX-particles.rotation.x)*0.08;
+    particles.rotation.z+=(0-particles.rotation.z)*0.08;
   } else {
-    // 散布形态：自由旋转
-    particles.rotation.y += 0.0015;
-    particles.rotation.x += Math.sin(timeAccum * 0.4) * 0.008;
-    particles.rotation.z += Math.cos(timeAccum * 0.35) * 0.006;
+    particles.rotation.y+=0.0015;
+    particles.rotation.x+=Math.sin(timeAccum*0.4)*0.008;
+    particles.rotation.z+=Math.cos(timeAccum*0.35)*0.006;
   }
 
   colorUpdateCounter++;
-  if (colorUpdateCounter >= 2) {
-    colorUpdateCounter = 0;
-    updateParticleColors(smoothGesture, smoothOpenness, timeAccum);
-    updateStarColors(smoothGesture, smoothOpenness, timeAccum);
-  }
-  updateAura(smoothGesture, smoothOpenness, timeAccum);
+  if (colorUpdateCounter>=2) {colorUpdateCounter=0; updateColors(smoothGesture,smoothOpenness,timeAccum); updateStars(smoothGesture,smoothOpenness,timeAccum);}
+  updateAura(smoothGesture,smoothOpenness,timeAccum);
 
-  const targetSize = 0.08 + smoothOpenness * 0.04 + (smoothGesture > 0 ? 0.03 : 0);
-  material.size += (targetSize - material.size) * 3 * dt;
+  const tSize=0.08+smoothOpenness*0.04+(smoothGesture>0?0.03:0);
+  material.size+=(tSize-material.size)*3*dt;
 
-  updateUI(smoothGesture, smoothOpenness);
-  renderer.render(scene, camera);
+  updateUI(smoothGesture,smoothOpenness);
+  renderer.render(scene,camera);
 }
 
-// ================================================================
-// 10. 音乐系统（Web Audio API 环境音乐 + 可选本地 MP3）
-// ================================================================
-let musicOn = false;
-let audioCtx = null;
-let ambientNodes = null;
-let localAudio = null;
-let localPlaylist = [];
-let localTrackIdx = 0;
-
-function createAmbientMusic() {
-  const ctx = new (window.AudioContext || window.webkitAudioContext)();
-
-  // 主音量
-  const masterGain = ctx.createGain();
-  masterGain.gain.value = 0;
-  masterGain.connect(ctx.destination);
-
-  // 混响（用延迟模拟）
-  const delay = ctx.createDelay(0.4);
-  delay.delayTime.value = 0.35;
-  const feedback = ctx.createGain();
-  feedback.gain.value = 0.3;
-  const delayDry = ctx.createGain();
-  delayDry.gain.value = 0.7;
-  const delayWet = ctx.createGain();
-  delayWet.gain.value = 0.3;
-
-  // 和弦进行（浪漫 C大调）
-  const chords = [
-    [261.63, 329.63, 392.00],  // C major
-    [293.66, 369.99, 440.00],  // D minor
-    [349.23, 440.00, 523.25],  // F major
-    [392.00, 493.88, 587.33],  // G major
-    [329.63, 392.00, 493.88],  // E minor
-    [220.00, 261.63, 329.63],  // A minor
-  ];
-
-  let chordIdx = 0;
-  let chordStartTime = ctx.currentTime;
-  const oscillators = [];
-  const lfos = [];
-
-  function changeChord() {
-    const chord = chords[chordIdx % chords.length];
-    chordIdx++;
-
-    // 渐变到新和弦
-    const now = ctx.currentTime;
-    chord.forEach((freq, idx) => {
-      if (oscillators[idx]) {
-        oscillators[idx].frequency.cancelScheduledValues(now);
-        oscillators[idx].frequency.setTargetAtTime(freq, now, 0.5);
-      }
-    });
-
-    chordStartTime = now;
-  }
-
-  // 创建 3 个振荡器（含泛音）
-  for (let i = 0; i < 3; i++) {
-    const osc = ctx.createOscillator();
-    const oscGain = ctx.createGain();
-    const lfo = ctx.createOscillator();
-    const lfoGain = ctx.createGain();
-
-    osc.type = i === 0 ? 'sine' : i === 1 ? 'triangle' : 'sine';
-    osc.frequency.value = chords[0][i];
-    oscGain.gain.value = 0.06;
-
-    // LFO 调制音量（颤音效果）
-    lfo.type = 'sine';
-    lfo.frequency.value = 0.2 + i * 0.15;
-    lfoGain.gain.value = 0.02;
-
-    lfo.connect(lfoGain);
-    lfoGain.connect(oscGain.gain);
-    osc.connect(oscGain);
-    oscGain.connect(delayDry);
-    oscGain.connect(delayWet);
-
-    osc.start();
-    lfo.start();
-
-    oscillators.push(osc);
-    lfos.push(lfo);
-  }
-
-  delayDry.connect(masterGain);
-  delayWet.connect(delay);
-  delay.connect(feedback);
-  feedback.connect(delay);
-  delay.connect(masterGain);
-
-  // 和弦定时切换
-  const chordInterval = setInterval(() => {
-    if (ctx.state === 'closed') {
-      clearInterval(chordInterval);
-      return;
-    }
-    changeChord();
-  }, 8000);
-
-  return {
-    ctx,
-    masterGain,
-    oscillators,
-    lfos,
-    chordInterval,
-    fadeIn() {
-      if (ctx.state === 'suspended') ctx.resume();
-      const now = ctx.currentTime;
-      masterGain.gain.cancelScheduledValues(now);
-      masterGain.gain.setTargetAtTime(0.12, now, 1.5);
-    },
-    fadeOut() {
-      const now = ctx.currentTime;
-      masterGain.gain.cancelScheduledValues(now);
-      masterGain.gain.setTargetAtTime(0, now, 1.0);
-    },
-    destroy() {
-      clearInterval(chordInterval);
-      oscillators.forEach(o => { try { o.stop(); } catch(e) {} });
-      lfos.forEach(l => { try { l.stop(); } catch(e) {} });
-      ctx.close();
-    }
-  };
+// ═══════════════════ 键盘/鼠标后备 ═══════════════════
+function setupFallback() {
+  document.addEventListener('keydown',(e)=>{
+    const k=parseInt(e.key);
+    if (k>=0&&k<=5) {smoothGesture=k; for(let i=0;i<6;i++)gestureVotes[i]=0; gestureVotes[k]=10;}
+  });
+  document.addEventListener('mousemove',(e)=>{
+    smoothOpenness+=(Math.max(0,Math.min(1,1-e.clientY/window.innerHeight))-smoothOpenness)*0.3;
+    smoothHandX+=((e.clientX/window.innerWidth)-smoothHandX)*0.1;
+    smoothHandY+=((1-e.clientY/window.innerHeight)-smoothHandY)*0.1;
+  });
+  document.addEventListener('touchmove',(e)=>{
+    smoothOpenness+=(Math.max(0,Math.min(1,1-e.touches[0].clientY/window.innerHeight))-smoothOpenness)*0.3;
+  },{passive:true});
+  hintEl.style.opacity='1';
 }
 
-// 尝试加载本地 MP3 文件
-async function tryLoadLocalMusic() {
-  const hint = document.getElementById('local-music-hint');
-  // 尝试加载 musics/ 文件夹中的文件
-  const testFiles = ['1.wav', '2.wav', '3.wav'];
-  const found = [];
+// ═══════════════════ QQ音乐 ═══════════════════
+let musicOn=false, musicInited=false;
+function initMusic() {
+  const btn=document.getElementById('music-btn');
+  const player=document.getElementById('music-player');
+  const iframe=document.getElementById('music-iframe');
+  const inputWrap=document.getElementById('music-song-input');
+  const songInput=document.getElementById('song-id-input');
+  const songBtn=document.getElementById('song-id-btn');
+  let songId=CONFIG.defaultQQSongId;
 
-  for (const f of testFiles) {
+  function loadPlayer(id) {
+    songId=id;
+    iframe.src=`https://i.y.qq.com/n2/m/outchain/player/index.html?songid=${id}&songtype=0&autoplay=1`;
+    musicInited=true;
+  }
+
+  btn.addEventListener('click',()=>{
+    musicOn=!musicOn;
+    if (musicOn) {
+      btn.classList.add('on'); btn.classList.remove('off');
+      btn.textContent='♪';
+      if (!musicInited) loadPlayer(songId);
+      player.classList.remove('hidden');
+      inputWrap.classList.add('show');
+      if (musicInited) { iframe.src=iframe.src; } // 重新加载触发播放
+    } else {
+      btn.classList.remove('on'); btn.classList.add('off');
+      btn.textContent='♪';
+      player.classList.add('hidden');
+      inputWrap.classList.remove('show');
+    }
+  });
+
+  // 双击音乐按钮显示/隐藏输入框
+  btn.addEventListener('dblclick',()=>{
+    inputWrap.classList.toggle('show');
+  });
+
+  songBtn.addEventListener('click',()=>{
+    const id=songInput.value.trim();
+    if (id) loadPlayer(id);
+  });
+  songInput.addEventListener('keydown',(e)=>{
+    if (e.key==='Enter') {const id=songInput.value.trim(); if(id)loadPlayer(id);}
+  });
+}
+
+// ═══════════════════ 手势初始化 ═══════════════════
+let cameraStream=null, animFrameId=null;
+
+function stopCamera() {
+  if (animFrameId) {cancelAnimationFrame(animFrameId); animFrameId=null;}
+  if (cameraStream) {cameraStream.getTracks().forEach(t=>t.stop()); cameraStream=null;}
+}
+
+async function initMediaPipe() {
+  const loadingText=document.getElementById('loading-text');
+  const loadingSub=document.getElementById('loading-sub');
+  const progressBar=document.getElementById('loading-progress');
+
+  if (typeof Hands==='undefined') {
+    loadingText.textContent='手势库未加载'; loadingSub.textContent='使用键盘模式：按 0-5 切换形态';
+    progressBar.style.width='100%'; return false;
+  }
+
+  loadingText.textContent='正在初始化…';
+  loadingSub.textContent='请求摄像头 + 加载AI模型（约18MB）';
+
+  let progress=0;
+  const progressTimer=setInterval(()=>{
+    progress+=Math.random()*5; if (progress>85) progress=85;
+    progressBar.style.width=progress+'%';
+  },500);
+
+  const hands=new Hands({locateFile:(f)=>`models/${f}`});
+  hands.setOptions({maxNumHands:1,modelComplexity:1,minDetectionConfidence:0.65,minTrackingConfidence:0.4,selfieMode:true});
+  hands.onResults(onHandResults);
+
+  const video=document.getElementById('input-video');
+
+  try {
+    // 获取摄像头
+    let stream;
     try {
-      const resp = await fetch('musics/' + f, { method: 'HEAD' });
-      if (resp.ok) found.push('musics/' + f);
-    } catch (e) {
-      // 文件不存在，跳过
+      stream=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480,facingMode:'user'}});
+    } catch(camErr) {
+      console.warn('摄像头:',camErr.message);
+      clearInterval(progressTimer); progressBar.style.width='100%';
+      loadingText.textContent='摄像头不可用'; loadingSub.textContent='使用键盘模式';
+      return false;
     }
-  }
+    cameraStream=stream; video.srcObject=stream; await video.play();
 
-  if (found.length > 0) {
-    localPlaylist = found;
-    hint.textContent = '本地音乐已就绪 (' + found.length + '首)';
-    return true;
-  } else {
-    hint.textContent = '💡 将 MP3 放入 musics/ 文件夹即可播放';
+    const preview=document.createElement('video');
+    preview.id='video-preview'; preview.srcObject=stream;
+    preview.autoplay=true; preview.playsInline=true; preview.muted=true;
+    document.body.appendChild(preview);
+
+    // 帧循环（第一次send触发模型自动加载）
+    loadingSub.textContent='加载AI模型中…';
+    let modelReady=false, timedOut=false;
+    const loadTimeout=setTimeout(()=>{
+      if (!modelReady) {timedOut=true; clearInterval(progressTimer); progressBar.style.width='100%';
+        loadingText.textContent='模型加载超时'; loadingSub.textContent='使用键盘模式，模型后台继续加载';}
+    },CONFIG.modelLoadTimeout*1000);
+
+    function frame() {
+      if (!cameraStream||timedOut) return;
+      hands.send({image:video}).then(()=>{
+        if (!modelReady) {modelReady=true; clearTimeout(loadTimeout); clearInterval(progressTimer); progressBar.style.width='100%';}
+        if (cameraStream) animFrameId=requestAnimationFrame(frame);
+      }).catch(()=>{if(cameraStream)animFrameId=requestAnimationFrame(frame);});
+    }
+    animFrameId=requestAnimationFrame(frame);
+
+    await new Promise(r=>setTimeout(r,2000));
+    return !timedOut;
+  } catch(e) {
+    console.warn('初始化失败:',e.message);
+    stopCamera(); clearInterval(progressTimer); progressBar.style.width='100%';
+    loadingText.textContent='初始化失败'; loadingSub.textContent='使用键盘模式';
     return false;
   }
 }
 
-function initMusic() {
-  const btn = document.getElementById('music-btn');
-
-  btn.addEventListener('click', async () => {
-    musicOn = !musicOn;
-
-    if (musicOn) {
-      btn.classList.remove('off');
-
-      // 优先使用本地 MP3
-      if (localPlaylist.length > 0) {
-        if (!localAudio) {
-          localAudio = new Audio();
-          localAudio.loop = false;
-          localAudio.volume = 0.25;
-          localAudio.addEventListener('ended', () => {
-            localTrackIdx = (localTrackIdx + 1) % localPlaylist.length;
-            localAudio.src = localPlaylist[localTrackIdx];
-            localAudio.play().catch(() => {});
-          });
-        }
-        localAudio.src = localPlaylist[localTrackIdx];
-        localAudio.play().catch(() => {
-          // 如果本地播放失败，回退到环境音乐
-          initAmbientFallback();
-        });
-      } else {
-        initAmbientFallback();
-      }
-    } else {
-      btn.classList.add('off');
-      if (ambientNodes) {
-        ambientNodes.fadeOut();
-      }
-      if (localAudio) {
-        localAudio.pause();
-      }
-    }
-  });
-
-  function initAmbientFallback() {
-    if (!ambientNodes) {
-      try {
-        ambientNodes = createAmbientMusic();
-      } catch (e) {
-        console.warn('环境音乐初始化失败:', e);
-        return;
-      }
-    }
-    ambientNodes.fadeIn();
-  }
-}
-
-// ================================================================
-// 11. 启动
-// ================================================================
+// ═══════════════════ 启动 ═══════════════════
 async function main() {
   setupFallback();
   initMusic();
-  tryLoadLocalMusic();
 
-  hintEl.style.opacity = '0';
+  const cameraReady=await initMediaPipe();
+  useCamera=cameraReady;
+  if (!cameraReady) hintEl.style.opacity='1';
 
-  const cameraReady = await initMediaPipe();
-  useCamera = cameraReady;
-
-  if (!cameraReady) {
-    hintEl.style.opacity = '1';
-  }
-
-  const loading = document.getElementById('loading');
+  const loading=document.getElementById('loading');
   loading.classList.add('hidden');
-  setTimeout(() => loading.remove(), 700);
+  setTimeout(()=>loading.remove(),800);
 
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
+  window.addEventListener('resize',()=>{
+    camera.aspect=window.innerWidth/window.innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(window.innerWidth,window.innerHeight);
   });
 
   requestAnimationFrame(animate);
 }
 
-main().catch((e) => {
-  console.error('启动失败:', e);
-  document.getElementById('loading-text').textContent = '加载失败，请刷新页面';
+main().catch(e=>{
+  console.error('启动失败:',e);
+  document.getElementById('loading-text').textContent='加载失败，请刷新页面';
 });
 </script>
-
 </body>
 </html>
