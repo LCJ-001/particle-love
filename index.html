@@ -110,7 +110,7 @@
   <div id="openness-bar-wrap"><div id="openness-bar" style="width:50%"></div></div>
 </div>
 
-<div id="hint">按 0 / 1 / 2 切换手势 &nbsp;|&nbsp; 滑动鼠标控制张合</div>
+<div id="hint">按 0/1/2/3/4/5 切换形态 &nbsp;|&nbsp; 滑动鼠标控制张合</div>
 
 <script src="js/three.min.js"></script>
 <script src="js/camera_utils.js"></script>
@@ -337,6 +337,194 @@ function sampleTextPositions(text, fontSize, canvasW, canvasH, count) {
 const loveTargets = sampleTextPositions('爱你', 160, 900, 220, CONFIG.particleCount);
 const foreverTargets = sampleTextPositions('永远爱你', 110, 1000, 220, CONFIG.particleCount);
 
+// ---- 羽毛球形状 ----
+function drawShuttlecock(canvas) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const cx = w / 2;
+
+  ctx.fillStyle = '#ffffff';
+  // 球头（半圆）
+  ctx.beginPath();
+  ctx.arc(cx, 60, 42, Math.PI, 0);
+  ctx.fill();
+  // 球头底部横条
+  ctx.fillRect(cx - 42, 58, 84, 12);
+
+  // 羽毛裙身（梯形）
+  ctx.beginPath();
+  ctx.moveTo(cx - 42, 70);
+  ctx.lineTo(cx - 80, h - 20);
+  ctx.lineTo(cx + 80, h - 20);
+  ctx.lineTo(cx + 42, 70);
+  ctx.fill();
+
+  // 羽毛纹理线
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 3;
+  for (let i = -2; i <= 2; i++) {
+    ctx.beginPath();
+    ctx.moveTo(cx + i * 12, 78);
+    ctx.lineTo(cx + i * 28, h - 28);
+    ctx.stroke();
+  }
+  // 横纹
+  ctx.lineWidth = 2;
+  for (let j = 0; j < 3; j++) {
+    const y = 110 + j * 45;
+    ctx.beginPath();
+    ctx.moveTo(cx - 60 + j * 5, y);
+    ctx.lineTo(cx + 60 - j * 5, y);
+    ctx.stroke();
+  }
+}
+
+// ---- 尤尼克斯羽毛球拍形状 ----
+function drawRacket(canvas) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const cx = w / 2;
+
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = '#ffffff';
+
+  // 拍头椭圆
+  ctx.lineWidth = 10;
+  ctx.beginPath();
+  ctx.ellipse(cx, 130, 85, 110, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 拍头填充（网格感）
+  ctx.lineWidth = 1;
+  for (let i = -3; i <= 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(cx + i * 20, 40);
+    ctx.lineTo(cx + i * 15, 220);
+    ctx.stroke();
+  }
+  for (let j = -2; j <= 2; j++) {
+    ctx.beginPath();
+    ctx.moveTo(cx - 70, 130 + j * 35);
+    ctx.lineTo(cx + 70, 130 + j * 30);
+    ctx.stroke();
+  }
+
+  // 拍杆
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.moveTo(cx, 235);
+  ctx.lineTo(cx, 340);
+  ctx.stroke();
+
+  // 拍柄
+  ctx.fillRect(cx - 18, 340, 36, 90);
+  // 柄部纹路
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2;
+  for (let k = 0; k < 4; k++) {
+    ctx.beginPath();
+    ctx.moveTo(cx - 18, 355 + k * 20);
+    ctx.lineTo(cx + 18, 355 + k * 20);
+    ctx.stroke();
+  }
+}
+
+// ---- 情侣拥抱形状 ----
+function drawHuggingCouple(canvas) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const cx = w / 2;
+
+  ctx.fillStyle = '#ffffff';
+
+  // 左人头
+  ctx.beginPath();
+  ctx.arc(cx - 55, 60, 32, 0, Math.PI * 2);
+  ctx.fill();
+  // 右人头（略高）
+  ctx.beginPath();
+  ctx.arc(cx + 50, 50, 30, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 中间爱心
+  ctx.beginPath();
+  const hx = cx, hy = 85;
+  ctx.moveTo(hx, hy + 18);
+  ctx.bezierCurveTo(hx - 24, hy - 5, hx - 12, hy - 28, hx, hy - 8);
+  ctx.bezierCurveTo(hx + 12, hy - 28, hx + 24, hy - 5, hx, hy + 18);
+  ctx.fill();
+
+  // 左身体
+  ctx.beginPath();
+  ctx.moveTo(cx - 80, 95);
+  ctx.quadraticCurveTo(cx - 40, 170, cx - 10, h - 15);
+  ctx.lineTo(cx - 55, h - 15);
+  ctx.quadraticCurveTo(cx - 80, 170, cx - 95, 95);
+  ctx.fill();
+
+  // 右身体
+  ctx.beginPath();
+  ctx.moveTo(cx + 75, 90);
+  ctx.quadraticCurveTo(cx + 35, 165, cx + 8, h - 10);
+  ctx.lineTo(cx + 60, h - 10);
+  ctx.quadraticCurveTo(cx + 85, 165, cx + 95, 90);
+  ctx.fill();
+
+  // 环抱手臂（弧形连接两人）
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 14;
+  ctx.beginPath();
+  ctx.arc(cx, 125, 55, 0.15 * Math.PI, 0.85 * Math.PI);
+  ctx.stroke();
+  ctx.lineWidth = 14;
+  ctx.beginPath();
+  ctx.arc(cx, 125, 50, -0.85 * Math.PI, -0.15 * Math.PI);
+  ctx.stroke();
+}
+
+// 通用形状采样函数
+function sampleShape(drawFn, canvasW, canvasH, count) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvasW;
+  canvas.height = canvasH;
+  drawFn(canvas);
+
+  const ctx = canvas.getContext('2d');
+  const imageData = ctx.getImageData(0, 0, canvasW, canvasH);
+  const data = imageData.data;
+  const litPixels = [];
+
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] > 60) {
+      litPixels.push({ x: (i / 4) % canvasW, y: Math.floor((i / 4) / canvasW) });
+    }
+  }
+
+  if (litPixels.length < 10) {
+    console.warn('形状采样像素不足');
+    return Array.from({ length: count }, () => ({
+      x: (Math.random() - 0.5) * 2,
+      y: (Math.random() - 0.5) * 2,
+      z: (Math.random() - 0.5) * 0.3,
+    }));
+  }
+
+  const samples = [];
+  for (let i = 0; i < count; i++) {
+    const p = litPixels[Math.floor(Math.random() * litPixels.length)];
+    samples.push({
+      x: (p.x / canvasW - 0.5) * 2,
+      y: -(p.y / canvasH - 0.5) * 2,
+      z: (Math.random() - 0.5) * 0.25,
+    });
+  }
+  return samples;
+}
+
+const shuttlecockTargets = sampleShape(drawShuttlecock, 400, 380, CONFIG.particleCount);
+const racketTargets = sampleShape(drawRacket, 360, 460, CONFIG.particleCount);
+const hugTargets = sampleShape(drawHuggingCouple, 440, 380, CONFIG.particleCount);
+
 // Fibonacci 球面
 function fibonacciSphere(count) {
   const points = [];
@@ -379,7 +567,7 @@ let smoothHandX = 0.5;
 let smoothHandY = 0.5;
 let smoothHandZ = 0;
 
-const gestureVotes = [0, 0, 0];
+const gestureVotes = [0, 0, 0, 0, 0, 0];
 const GESTURE_VOTE_DECAY = 0.75;
 const GESTURE_SWITCH_THRESHOLD = 2.5;
 
@@ -408,8 +596,19 @@ function detectGesture(landmarks) {
   ];
   const extended = fingers.map(f => landmarks[f.tip].y < landmarks[f.pip].y - 0.015);
 
-  if (extended[0] && !extended[1] && !extended[2] && !extended[3]) return 1;
-  if (extended[0] && extended[1] && !extended[2] && !extended[3]) return 2;
+  const count = extended.filter(Boolean).length;
+
+  // 拇指检测：拇指尖 x 明显偏离食指根部（selfieMode 下镜像坐标）
+  const thumbTip = landmarks[4];
+  const thumbIp = landmarks[3];
+  const thumbExtended = thumbTip.x < thumbIp.x - 0.02;
+
+  if (count === 1 && extended[0]) return 1;
+  if (count === 2 && extended[0] && extended[1]) return 2;
+  if (count === 3 && extended[0] && extended[1] && extended[2]) return 3;
+  if (count === 4 && extended[0] && extended[1] && extended[2] && extended[3]) {
+    return thumbExtended ? 5 : 4;
+  }
   return 0;
 }
 
@@ -421,7 +620,7 @@ function calcOpenness(landmarks) {
 }
 
 function updateGestureVote(raw) {
-  for (let i = 0; i < 3; i++) gestureVotes[i] *= GESTURE_VOTE_DECAY;
+  for (let i = 0; i < 6; i++) gestureVotes[i] *= GESTURE_VOTE_DECAY;
   gestureVotes[raw] += 1.2;
 
   const maxVote = Math.max(...gestureVotes);
@@ -429,13 +628,13 @@ function updateGestureVote(raw) {
 
   if (maxGesture !== smoothGesture && maxVote >= GESTURE_SWITCH_THRESHOLD) {
     smoothGesture = maxGesture;
-    for (let i = 0; i < 3; i++) gestureVotes[i] = 0;
+    for (let i = 0; i < 6; i++) gestureVotes[i] = 0;
     gestureVotes[maxGesture] = GESTURE_SWITCH_THRESHOLD;
   }
 
   if (smoothGesture > 0 && gestureVotes[smoothGesture] < 1.0 && maxVote < 1.5) {
     smoothGesture = 0;
-    for (let i = 0; i < 3; i++) gestureVotes[i] = 0;
+    for (let i = 0; i < 6; i++) gestureVotes[i] = 0;
   }
 }
 
@@ -461,7 +660,7 @@ function onHandResults(results) {
     handDetected = false;
     if (!useCamera) return;
     smoothOpenness += (0.5 - smoothOpenness) * 0.05;
-    for (let i = 0; i < 3; i++) gestureVotes[i] *= 0.8;
+    for (let i = 0; i < 6; i++) gestureVotes[i] *= 0.8;
     if (Math.max(...gestureVotes) < 1.5) smoothGesture = 0;
     // 手离开时缓慢回到中心
     handCenterX = 0.5;
@@ -484,7 +683,7 @@ async function initMediaPipe() {
 
   if (typeof Hands === 'undefined') {
     loadingText.textContent = '手势库未加载，使用键盘模式';
-    loadingSub.textContent = '按 1/2 切换文字，滑动鼠标控制张合';
+    loadingSub.textContent = '按 0-5 切换形态，滑动鼠标控制张合';
     progressBar.style.width = '100%';
     return false;
   }
@@ -522,7 +721,7 @@ async function initMediaPipe() {
       clearInterval(progressTimer);
       progressBar.style.width = '100%';
       loadingText.textContent = '模型加载超时，使用键盘模式';
-      loadingSub.textContent = '按 1/2 切换手势，模型将在后台继续加载';
+      loadingSub.textContent = '按 0-5 切换形态，模型将在后台继续加载';
       resolve(false);
     }, CONFIG.modelLoadTimeout * 1000);
   });
@@ -562,7 +761,7 @@ async function initMediaPipe() {
       clearInterval(progressTimer);
       progressBar.style.width = '100%';
       loadingText.textContent = '摄像头不可用，使用键盘模式';
-      loadingSub.textContent = '按 1/2 切换手势，滑动鼠标控制张合';
+      loadingSub.textContent = '按 0-5 切换形态，滑动鼠标控制张合';
       console.warn('摄像头不可用:', e.message);
       return false;
     }
@@ -576,9 +775,12 @@ async function initMediaPipe() {
 // ================================================================
 function setupFallback() {
   document.addEventListener('keydown', (e) => {
-    if (e.key === '0') { smoothGesture = 0; for (let i = 0; i < 3; i++) gestureVotes[i] = 0; }
-    if (e.key === '1') { smoothGesture = 1; for (let i = 0; i < 3; i++) gestureVotes[i] = 0; gestureVotes[1] = 10; }
-    if (e.key === '2') { smoothGesture = 2; for (let i = 0; i < 3; i++) gestureVotes[i] = 0; gestureVotes[2] = 10; }
+    if (e.key === '0') { smoothGesture = 0; for (let i = 0; i < 6; i++) gestureVotes[i] = 0; }
+    if (e.key === '1') { smoothGesture = 1; for (let i = 0; i < 6; i++) gestureVotes[i] = 0; gestureVotes[1] = 10; }
+    if (e.key === '2') { smoothGesture = 2; for (let i = 0; i < 6; i++) gestureVotes[i] = 0; gestureVotes[2] = 10; }
+    if (e.key === '3') { smoothGesture = 3; for (let i = 0; i < 6; i++) gestureVotes[i] = 0; gestureVotes[3] = 10; }
+    if (e.key === '4') { smoothGesture = 4; for (let i = 0; i < 6; i++) gestureVotes[i] = 0; gestureVotes[4] = 10; }
+    if (e.key === '5') { smoothGesture = 5; for (let i = 0; i < 6; i++) gestureVotes[i] = 0; gestureVotes[5] = 10; }
   });
 
   document.addEventListener('mousemove', (e) => {
@@ -696,20 +898,18 @@ function computeTargets(gesture, openness, time) {
   // 深度影响扩散
   const depthFactor = 1 + smoothHandZ * 0.5;
 
-  if (gesture === 1) {
+  if (gesture >= 1 && gesture <= 5) {
+    // 统一处理所有形状形态（文字 + 羽毛球 + 球拍 + 拥抱）
+    let sourceTargets;
+    if (gesture === 1) sourceTargets = loveTargets;
+    else if (gesture === 2) sourceTargets = foreverTargets;
+    else if (gesture === 3) sourceTargets = shuttlecockTargets;
+    else if (gesture === 4) sourceTargets = racketTargets;
+    else sourceTargets = hugTargets; // gesture === 5
+
     const spread = (0.65 + openness * 1.4) * depthFactor;
     for (let i = 0; i < CONFIG.particleCount; i++) {
-      const t = loveTargets[i];
-      const wave = Math.sin(time * 1.8 + particlePhases[i]) * 0.025 * openness;
-      // 文字在 XY 平面（面向摄像头），Z 轴做微小厚度
-      targets[i * 3]     = t.x * CONFIG.textWidth * spread + handOffsetX + wave;
-      targets[i * 3 + 1] = t.y * CONFIG.textHeight * spread + handOffsetY + wave * 0.7;
-      targets[i * 3 + 2] = t.z * spread * 2 + smoothHandZ * 1.5;
-    }
-  } else if (gesture === 2) {
-    const spread = (0.65 + openness * 1.4) * depthFactor;
-    for (let i = 0; i < CONFIG.particleCount; i++) {
-      const t = foreverTargets[i];
+      const t = sourceTargets[i];
       const wave = Math.sin(time * 1.8 + particlePhases[i]) * 0.025 * openness;
       targets[i * 3]     = t.x * CONFIG.textWidth * spread + handOffsetX + wave;
       targets[i * 3 + 1] = t.y * CONFIG.textHeight * spread + handOffsetY + wave * 0.7;
@@ -738,7 +938,7 @@ const opennessBar = document.getElementById('openness-bar');
 const hintEl = document.getElementById('hint');
 
 function updateUI(gesture, openness) {
-  const names = { 0: '散布形态', 1: '爱 你', 2: '永 远 爱 你' };
+  const names = { 0: '散布形态', 1: '爱 你', 2: '永 远 爱 你', 3: '羽毛球', 4: '尤尼克斯', 5: '情侣拥抱' };
   gestureLabel.textContent = names[gesture] || '散布形态';
   gestureLabel.className = gesture > 0 ? 'active' : '';
   opennessBar.style.width = (openness * 100) + '%';
